@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: plandem-portal-eventos
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: SUPERADMIN_EMAIL
+        value: jmv1985jmv@gmail.com
+      - key: NODE_ENV
+        value: production

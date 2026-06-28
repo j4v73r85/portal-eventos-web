@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plandem - Ocio En Vivo y Match de Planes</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,600;0,700;1,300&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+    <div id="alertaMatch" class="alerta-match">
+        🔥 ¡MATCH EN PLANDEM! 🔥<br><span id="txtAlertaDinamica"></span>
+    </div>
+
+    <header class="hero-header">
+        <div class="lava-lamp-orb"></div>
+        <div class="hero-logo-box">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 200" width="100%" height="100%">
+                <defs>
+                    <linearGradient id="gradientePlandem" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#ec4899" />
+                        <stop offset="50%" stop-color="#8b5cf6" />
+                        <stop offset="100%" stop-color="#4f46e5" />
+                    </linearGradient>
+                </defs>
+                <g transform="translate(40, 30)">
+                    <rect x="90" y="25" width="16" height="110" fill="url(#gradientePlandem)" rx="8"/>
+                    <path d="M 98 25 A 32 32 0 0 1 130 57 A 32 32 0 0 1 98 89" fill="none" stroke="url(#gradientePlandem)" stroke-width="16" stroke-linecap="round"/>
+                    <path d="M 138 135 A 28 28 0 0 1 110 107 A 28 28 0 0 1 138 79" fill="none" stroke="url(#gradientePlandem)" stroke-width="16" stroke-linecap="round"/>
+                    <rect x="130" y="55" width="16" height="80" fill="url(#gradientePlandem)" rx="8"/>
+                    <g transform="translate(138, 73) scale(0.8)">
+                        <path d="M 0 0 C -12 -12, -18 -24, -18 -36 A 18 18 0 1 1 18 -36 C 18 -24, 12 -12, 0 0 Z" fill="#ef4444"/>
+                        <circle cx="0" cy="-36" r="6" fill="#0f172a"/>
+                    </g>
+                </g>
+                <g transform="translate(230, 115)">
+                    <text font-family="'Poppins', sans-serif" font-weight="800" font-size="52" fill="#f8fafc" letter-spacing="1">Plan<tspan fill="url(#gradientePlandem)">dem</tspan></text>
+                    <text y="24" font-family="'Poppins', sans-serif" font-weight="600" font-size="14" fill="#94a3b8" letter-spacing="4">OCIO EN VIVO</text>
+                </g>
+            </svg>
+        </div>
+        
+        <div class="hero-copy">
+            <p class="eslogan-cabecera">Siente el <strong>ambiente real</strong>. ¡Elige tu plan en <span class="eslogan-logo">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 200" width="240" height="80" preserveAspectRatio="xMinYMid meet">
+                    <defs>
+                        <linearGradient id="gradientePlandemInline" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#ec4899" />
+                            <stop offset="50%" stop-color="#8b5cf6" />
+                            <stop offset="100%" stop-color="#4f46e5" />
+                        </linearGradient>
+                    </defs>
+                    <g transform="translate(40, 30)">
+                        <rect x="90" y="25" width="16" height="110" fill="url(#gradientePlandemInline)" rx="8"/>
+                        <path d="M 98 25 A 32 32 0 0 1 130 57 A 32 32 0 0 1 98 89" fill="none" stroke="url(#gradientePlandemInline)" stroke-width="16" stroke-linecap="round"/>
+                        <path d="M 138 135 A 28 28 0 0 1 110 107 A 28 28 0 0 1 138 79" fill="none" stroke="url(#gradientePlandemInline)" stroke-width="16" stroke-linecap="round"/>
+                        <rect x="130" y="55" width="16" height="80" fill="url(#gradientePlandemInline)" rx="8"/>
+                        <g transform="translate(138, 73) scale(0.8)">
+                            <path d="M 0 0 C -12 -12, -18 -24, -18 -36 A 18 18 0 1 1 18 -36 C 18 -24, 12 -12, 0 0 Z" fill="#ef4444"/>
+                            <circle cx="0" cy="-36" r="6" fill="#0f172a"/>
+                        </g>
+                    </g>
+                    <g transform="translate(230, 115)">
+                        <text font-family="'Poppins', sans-serif" font-weight="800" font-size="52" fill="#f8fafc" letter-spacing="1">Plan<tspan fill="url(#gradientePlandemInline)">dem</tspan></text>
+                    </g>
+                </svg>
+            </span></p>
+        </div>
+        
+        <div class="hero-actions">
+            <div id="bannerRegistroPromocional" style="display: flex; align-items: center; gap: 10px; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 14px 18px; border-radius: 18px; border: 1px solid #4f46e5; max-width: 520px; width: 100%;">
+                <span style="font-size: 0.9rem; font-weight: 700; color: #f8fafc; line-height: 1.2;">Accede a la plataforma:</span>
+                <button onclick="abrirModalAuth(); cambiarPestanaAuth('login');" style="background: #4f46e5; color: white; border: none; padding: 8px 14px; border-radius: 10px; font-weight: 800; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: background 0.2s;">INICIA SESIÓN</button>
+                <button onclick="abrirModalAuth(); cambiarPestanaAuth('registro');" style="background: #10b981; color: white; border: none; padding: 8px 14px; border-radius: 10px; font-weight: 800; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: background 0.2s;">REGÍSTRATE</button>
+            </div>
+        </div>
+
+        <div id="perfilUsuarioBox" class="hero-profile-card" style="display: none;">
+            <div style="font-size: 0.95rem; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <div>
+                    👤 <span id="lblNombreUsuario">Visitante</span>
+                    <span id="lblSemaforo" style="margin-left: 4px; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">-</span>
+                    <span id="lblPromotorStatus" style="margin-left: 4px; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; display:none; background:#4f46e5; color:#fff;">PROMOTOR</span>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap: wrap; justify-content:flex-end;">
+                    <button id="btnPerfilMenu" onclick="abrirModalPerfilMenu()" style="background:#2563eb; color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:0.8rem;">👤 Mi perfil ▾</button>
+                    <button id="btnEditarPerfil" onclick="abrirModalEditarPerfil()" style="background:#4f46e5; color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:0.8rem;">⚙️ Perfil</button>
+                    <button id="btnLogout" style="background:#ef4444; color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:0.8rem;">Cerrar sesión</button>
+                </div>
+            </div>
+            <div class="control-privacidad" style="margin-top: 12px;">
+                <div style="flex: 1;">
+                    <span style="font-weight: bold; display: block; font-size: 0.8rem; color: white;">🌐 Modo Social</span>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="checkModoSocial" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <button id="btnContactarVerificacionPromotor" style="display:none; margin-top:10px; background:#25d366; color:#052e16; border:none; padding:8px 12px; border-radius:10px; font-weight:800; font-size:0.8rem; cursor:pointer;">Verificar perfil promotor por WhatsApp</button>
+        </div>
+    </header>
+
+    <div class="banner-publica" onclick="abrirModalPublicarEvento()">📢 ¿Eres promotor? Publica tu evento en Plandem para aparecer destacado en el Mapa en Vivo</div>
+
+    <div id="adminPromotorAlert" class="banner-publica" style="display:none; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%); cursor: default; margin-top: 10px;"></div>
+
+    <section class="seccion-premium-hero">
+        <h2 style="font-size: 1.6rem; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">🃏 Eventos Destacados Premium (Swipe Exclusivo)</h2>
+        
+        <div class="contenedor-carrusel-premium">
+            <button class="btn-flecha-carrusel" onclick="navegarCarruselManualmente(-1)">◀</button>
+            
+            <div id="tinderWrapper" class="tinder-wrapper"></div>
+            
+            <button class="btn-flecha-carrusel" onclick="navegarCarruselManualmente(1)">▶</button>
+        </div>
+        
+        <div id="tinderControles" class="tinder-controles">
+            <button class="btn-interaccion btn-no" id="btnSwipeNo" onclick="interactuarPremium('NO_INTERESA')">👎 No me interesa</button>
+            <button class="btn-interaccion btn-interesa" id="btnSwipeInteresa" onclick="interactuarPremium('ME_INTERESA')">⭐ Me interesa</button>
+            <button class="btn-interaccion btn-asistire" id="btnSwipeAsistire" onclick="interactuarPremium('ASISTIRE')">✅ Asistiré</button>
+            
+            <p id="msgAnonimoSwipe" style="width:100%; text-align:center; font-size:0.85rem; color:var(--premium-gold); margin-top:10px; font-weight:bold;">
+                ⚠️ Regístrate o Inicia Sesión para poder interactuar con los eventos Premium.
+            </p>
+        </div>
+    </section>
+
+    <div id="modalSolicitudPromotor" class="modal">
+        <div class="modal-content" style="max-width: 640px;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModalSolicitudPromotor()">&times;</span>
+            <h2 style="color: white; margin-bottom: 18px;">Solicitud de promotor</h2>
+            <p style="color: var(--text-muted); margin-bottom: 18px; line-height: 1.7;">
+                Si quieres publicar eventos en Plandem debes registrarte como promotor y enviar una solicitud. Nuestro equipo revisará tu perfil para evitar publicaciones no autorizadas.
+            </p>
+            <div id="promotorSolicitudInfo" style="margin-bottom: 20px; color: #f8fafc; background: rgba(79,70,229,0.14); padding: 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08);">
+                <strong>¿Qué hacemos?</strong><br>
+                Revisamos tu perfil antes de habilitar la publicación de eventos.<br>
+                Una vez aprobado, podrás subir fotos, vídeos promocionales y toda la información necesaria.
+            </div>
+            <form id="formSolicitudPromotor">
+                <textarea id="solicitudMensajePromotor" placeholder="Describe brevemente tu proyecto, tu experiencia como promotor y qué tipo de eventos quieres publicar..." rows="4" required style="width:100%; margin-bottom: 14px; border-radius: 12px; border: 1px solid #475569; padding: 12px; background: #0f172a; color: white;"></textarea>
+                <input type="url" id="solicitudEnlacePromo" placeholder="Enlace de portfolio o evento promocional (opcional)" style="width:100%; margin-bottom: 14px; border-radius: 12px; border: 1px solid #475569; padding: 12px; background: #0f172a; color: white;">
+                <button type="submit" style="width:100%; background:#f59e0b; color:#111827; padding:12px; border-radius:12px; border:none; font-weight:bold; cursor:pointer;">Enviar solicitud de promotor</button>
+            </form>
+        </div>
+    </div>
+
+    <section class="seccion-premium-hero">
+        <div>
+            <h2 style="margin-bottom: 15px;">🗺️ Radar de Afluencia Plandem</h2>
+            <div id="mapaCalorGlobal"></div>
+        </div>
+
+        <div>
+            <h2 style="margin-bottom: 15px;">⭐ Cartelera General Plandem</h2>
+            <div id="eventosContenedor"></div>
+        </div>
+    </div>
+
+    <div id="modalDetalleEvento" class="modal">
+        <div class="modal-content" style="max-width: 550px;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModalDetalle()">&times;</span>
+            <div id="contenidoDetalleEvento"></div>
+        </div>
+    </div>
+
+    <div id="modalChatConsent" class="modal">
+        <div class="modal-content" style="max-width: 460px; text-align: center;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModalChatConsent()">&times;</span>
+            <h3 style="color: white; margin-bottom: 10px;">Unirse al chat comunitario</h3>
+            <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 20px;">¿Quieres unirte al chat comunitario del evento para conectar con otros asistentes? Si no lo deseas, igualmente guardaremos tu asistencia en tu lista de eventos.</p>
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 5px;">
+                <button type="button" class="btn-interaccion btn-asistire" onclick="confirmarAsistenciaChat(true)">Sí, quiero el chat</button>
+                <button type="button" class="btn-interaccion btn-interesa" onclick="confirmarAsistenciaChat(false)">Solo guardarlo</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalPerfilMenu" class="modal">
+        <div class="modal-content perfil-modal" style="max-width: 760px;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModalPerfilMenu()">&times;</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap: 20px; flex-wrap: wrap; margin-bottom: 18px;">
+                <div>
+                    <h2 style="margin:0; color:white;">Mi espacio Plandem</h2>
+                    <p style="margin:6px 0 0; color:var(--text-muted);">Accede a tus eventos guardados, asistidos y valoraciones en un solo lugar.</p>
+                </div>
+                <div style="display:flex; gap:10px; flex-wrap: wrap;">
+                    <button class="perfil-tab" onclick="mostrarSeccionPerfil('editar')">Editar info</button>
+                    <button class="perfil-tab" onclick="mostrarSeccionPerfil('favoritos')">Me gusta</button>
+                    <button class="perfil-tab" onclick="mostrarSeccionPerfil('asistidos')">Asistidos</button>
+                    <button class="perfil-tab" onclick="mostrarSeccionPerfil('valoraciones')">Valoraciones</button>
+                    <button class="perfil-tab" onclick="mostrarSeccionPerfil('historial')">Historial</button>
+                </div>
+            </div>
+            <div id="contenidoPerfilMenu"></div>
+        </div>
+    </div>
+
+    <div id="modalEditarEvento" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModalEditar()">&times;</span>
+            <h3 style="margin-bottom:15px; color: white;">Editar Evento</h3>
+            <form id="formEditarEvento">
+                <input type="hidden" id="editEventoId">
+                <label>Título del Evento</label>
+                <input type="text" id="editTitulo" required>
+                <label>Descripción del Evento</label>
+                <textarea id="editDescripcion" rows="4" required></textarea>
+                <label>Precio (€)</label>
+                <input type="number" id="editPrecio">
+                
+                <label>Multimedia Actual (Haz clic en la X para borrar)</label>
+                <div id="contenedorEdicionMultimedia" class="grid-edicion-multimedia"></div>
+                
+                <label>Añadir más fotos o videos a la Galería</label>
+                <input type="file" id="editGaleria" accept="image/*,video/*" multiple>
+                <button type="submit" style="width:100%; background:#10b981; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold; margin-top:10px; cursor:pointer;">Guardar Cambios</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="modalAuth" class="modal">
+        <div class="modal-content" style="max-width: 450px;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModalAuth()">&times;</span>
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #334155;">
+                <button onclick="cambiarPestanaAuth('login')" id="btnTabLogin" style="flex:1; background:#4f46e5; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer;">Iniciar Sesión</button>
+                <button onclick="cambiarPestanaAuth('registro')" id="btnTabRegistro" style="flex:1; background:transparent; color:white; border:1px solid #475569; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer;">Crear Cuenta</button>
+            </div>
+
+            <form id="formLogin">
+                <input type="text" id="loginEmail" placeholder="Correo Electrónico o Usuario Administrador" required>
+                <input type="password" id="loginPassword" placeholder="Contraseña" required>
+                <button type="submit" style="width:100%; background:#10b981; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold;">Entrar en Tándem</button>
+            </form>
+
+            <form id="formRegistro" style="display: none;">
+                <input type="text" id="regNombre" placeholder="Nombre completo" required>
+                <input type="email" id="regEmail" placeholder="Correo Electrónico" required>
+                <input type="password" id="regPassword" placeholder="Contraseña (Mínimo 6 caracteres)" required>
+                <input type="date" id="regFechaNac" required>
+                <input type="text" id="regNacionalidad" placeholder="Nacionalidad">
+                <input type="text" id="regLocalidad" placeholder="Localidad de residencia">
+                
+                <select id="regEstadoCivil">
+                    <option value="Soltero/a">🟢 Soltero/a</option>
+                    <option value="En una relación">🟡 En una relación</option>
+                    <option value="Complicado">🔴 Complicado</option>
+                </select>
+
+                <select id="regTieneCoche">
+                    <option value="false">🚗 No tengo coche propio</option>
+                    <option value="true">🚗 Sí tengo coche para compartir</option>
+                </select>
+
+                <select id="regTipoUsuario" style="border: 2px solid #ec4899; margin-bottom: 15px;">
+                    <option value="CLIENTE">👤 Soy cliente</option>
+                    <option value="PROMOTOR">💼 Soy promotor</option>
+                </select>
+
+                <textarea id="regSolicitudPromotor" placeholder="Si quieres ser promotor, cuéntanos por qué deberíamos aprobarte..." rows="3" style="display:none; margin-bottom: 15px; border-radius: 12px; border: 1px solid #475569; padding: 12px; background: #0f172a; color: white;"></textarea>
+
+                <div id="bloqueVerificacionPromotorRegistro" style="display:none; margin-bottom: 15px; background: rgba(79,70,229,0.12); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px;">
+                    <p style="color:#f8fafc; font-size:0.9rem; margin-bottom:10px;"><strong>Verificación de promotor</strong> (obligatorio para publicar eventos)</p>
+                    <select id="regTipoPromotorLegal">
+                        <option value="EMPRESA">Soy empresa</option>
+                        <option value="AUTONOMO">Soy autónomo</option>
+                        <option value="PARTICULAR">Soy particular (sin empresa)</option>
+                    </select>
+                    <input type="text" id="regNombreComercial" placeholder="Nombre comercial o marca promotora">
+                    <input type="text" id="regNifCif" placeholder="NIF/CIF de la empresa o autónomo">
+                    <input type="text" id="regCargoPromotor" placeholder="Tu cargo (ej: gerente, relaciones públicas)">
+                    <input type="tel" id="regTelefonoPromotor" placeholder="Teléfono profesional de contacto">
+                    <input type="url" id="regWebRedesPromotor" placeholder="Web o red social principal del proyecto">
+                    <input type="text" id="regCiudadesPromotor" placeholder="Ciudades donde organizas eventos (separadas por coma)">
+                    <input type="text" id="regTipoEventosPromotor" placeholder="Tipo de eventos que organizas (club, festival, brunch, etc.)">
+                    <select id="regFrecuenciaPromotor">
+                        <option value="">Frecuencia de eventos</option>
+                        <option value="Semanal">Semanal</option>
+                        <option value="Quincenal">Quincenal</option>
+                        <option value="Mensual">Mensual</option>
+                        <option value="Puntual">Puntual / Estacional</option>
+                    </select>
+                    <input type="url" id="regPruebaPromotor" placeholder="Enlace de prueba: cartel, evento anterior o prensa">
+                    <label style="display:flex; align-items:flex-start; gap:8px; margin-top:6px; font-size:0.82rem; color:#e2e8f0;">
+                        <input type="checkbox" id="regDeclaracionPromotor" style="width:auto; margin-top:3px;">
+                        Declaro que soy responsable real del proyecto y autorizo la revisión manual de los datos.
+                    </label>
+                    <a href="https://wa.me/34643435797" target="_blank" style="display:inline-block; margin-top:10px; color:#25d366; font-weight:700; text-decoration:underline;">¿Tienes dudas? Contacto directo por WhatsApp</a>
+                </div>
+
+                <select id="regSemaforo" style="border: 2px solid #ec4899;">
+                    <option value="VERDE">🟢 Verde (Abierto a conocer gente y pareja)</option>
+                    <option value="AMARILLO">🟡 Amarillo (Abierto solo a amistades)</option>
+                    <option value="ROJO">🔴 Rojo (Cerrado)</option>
+                </select>
+
+                <textarea id="regDescripcion" placeholder="Defínete en un espacio... ¿Qué buscas en tus planes?" rows="3"></textarea>
+                <button type="submit" style="width:100%; background:#4f46e5; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold;">Completar Registro</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="modalEditarPerfil" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModalEditarPerfil()">&times;</span>
+            <h3 style="margin-bottom:15px; color: white;">Editar Mi Perfil</h3>
+            <form id="formEditarPerfil">
+                <label style="color: white; font-weight: bold; display: block; margin-bottom: 8px;">Foto de Perfil</label>
+                <div style="width: 100px; height: 100px; border-radius: 50%; overflow: hidden; margin-bottom: 15px; border: 2px solid #4f46e5;">
+                    <img id="previewFoto" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200" style="width: 100%; height: 100%; object-fit: cover;" alt="Foto">
+                </div>
+                <input type="file" id="inputFotoPerfil" accept="image/*" style="margin-bottom: 15px;">
+
+                <label style="color: white; font-weight: bold; display: block; margin-bottom: 8px;">Tipo de cuenta</label>
+                <select id="perfilTipoUsuario" style="margin-bottom: 15px; border: 2px solid #ec4899;">
+                    <option value="CLIENTE">👤 Cliente</option>
+                    <option value="PROMOTOR">💼 Promotor</option>
+                </select>
+                <textarea id="perfilSolicitudPromotor" placeholder="Solicitud de promotor: explica qué tipo de eventos ofreces y por qué deberíamos aprobarte." rows="3" style="display:none; margin-bottom: 15px; border-radius: 12px; border: 1px solid #475569; padding: 12px; background: #0f172a; color: white;"></textarea>
+                <div id="bloqueVerificacionPromotorPerfil" style="display:none; margin-bottom: 15px; background: rgba(79,70,229,0.12); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px;">
+                    <p style="color:#f8fafc; font-size:0.9rem; margin-bottom:10px;"><strong>Datos para verificación de promotor</strong></p>
+                    <select id="perfilTipoPromotorLegal">
+                        <option value="EMPRESA">Soy empresa</option>
+                        <option value="AUTONOMO">Soy autónomo</option>
+                        <option value="PARTICULAR">Soy particular (sin empresa)</option>
+                    </select>
+                    <input type="text" id="perfilNombreComercial" placeholder="Nombre comercial o marca promotora">
+                    <input type="text" id="perfilNifCif" placeholder="NIF/CIF de la empresa o autónomo">
+                    <input type="text" id="perfilCargoPromotor" placeholder="Tu cargo dentro del proyecto">
+                    <input type="tel" id="perfilTelefonoPromotor" placeholder="Teléfono profesional de contacto">
+                    <input type="url" id="perfilWebRedesPromotor" placeholder="Web o red social principal">
+                    <input type="text" id="perfilCiudadesPromotor" placeholder="Ciudades donde organizas eventos">
+                    <input type="text" id="perfilTipoEventosPromotor" placeholder="Tipo de eventos organizados">
+                    <select id="perfilFrecuenciaPromotor">
+                        <option value="">Frecuencia de eventos</option>
+                        <option value="Semanal">Semanal</option>
+                        <option value="Quincenal">Quincenal</option>
+                        <option value="Mensual">Mensual</option>
+                        <option value="Puntual">Puntual / Estacional</option>
+                    </select>
+                    <input type="url" id="perfilPruebaPromotor" placeholder="Enlace de prueba (cartel, evento anterior o noticia)">
+                    <label style="display:flex; align-items:flex-start; gap:8px; margin-top:6px; font-size:0.82rem; color:#e2e8f0;">
+                        <input type="checkbox" id="perfilDeclaracionPromotor" style="width:auto; margin-top:3px;">
+                        Confirmo que los datos aportados son reales y verificables.
+                    </label>
+                    <a href="https://wa.me/34643435797" target="_blank" style="display:inline-block; margin-top:10px; color:#25d366; font-weight:700; text-decoration:underline;">Necesito ayuda con la verificación por WhatsApp</a>
+                </div>
+                <p style="color: var(--text-muted); margin-top: -8px; margin-bottom: 14px; font-size: 0.9rem;">Selecciona Promotor para solicitar revisión y publicar tus eventos.</p>
+                <label style="color: white; font-weight: bold; display: block; margin-bottom: 8px;">Estado de Disponibilidad</label>
+                <select id="perfilColorSemaforo" style="margin-bottom: 15px; border: 2px solid #ec4899;">
+                    <option value="VERDE">🟢 Verde (Abierto a conocer gente y pareja)</option>
+                    <option value="AMARILLO">🟡 Amarillo (Abierto solo a amistades)</option>
+                    <option value="ROJO">🔴 Rojo (Cerrado)</option>
+                </select>
+
+                <label style="color: white; font-weight: bold; display: block; margin-bottom: 8px;">Descripción Personal (Opcional)</label>
+                <textarea id="perfilDescripcion" placeholder="Cuéntanos sobre ti..." rows="3" style="margin-bottom: 15px;"></textarea>
+
+                <button type="submit" style="width:100%; background:#10b981; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold; cursor:pointer;">Guardar Cambios</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="modalFormulario" class="modal">
+        <div class="modal-content">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModal()">&times;</span>
+            <h3 style="margin-bottom:15px;">Publicar Evento en Plandem</h3>
+            <p style="color: var(--text-muted); margin-bottom: 18px;">Solo promotores aprobados pueden crear eventos. Completa toda la información para que tu publicación sea atractiva y clara.</p>
+            <form id="formEvento">
+                <input type="text" id="titulo" placeholder="Título del Evento" required>
+                <input type="text" id="subtitulo" placeholder="Frase breve para destacar tu evento" style="margin-bottom: 12px;">
+                <textarea id="descripcion" placeholder="Descripción completa del evento..." rows="3" required></textarea>
+                <input type="datetime-local" id="fechaInicio" required>
+                <input type="datetime-local" id="fechaFin" required>
+                <input type="text" id="organizador" placeholder="Organizador" required>
+                <input type="text" id="contactoEvento" placeholder="Email / WhatsApp / teléfono" required>
+                <input type="text" id="capacidad" placeholder="Capacidad estimada (personas)">
+                <input type="url" id="enlaceVenta" placeholder="Enlace de compra o sitio web promocional">
+                <textarea id="datosExtra" placeholder="Información extra: edad mínima, normas, consumos, precios VIP, etc." rows="3" style="margin-bottom: 12px;"></textarea>
+                <div style="display:flex; gap:6px; margin-bottom:12px; flex-wrap: wrap;">
+                    <input type="text" id="inputBuscar" placeholder="Dirección..." style="flex:1; min-width:180px;">
+                    <button type="button" onclick="buscarDireccion()" style="background:#000; color:#fff; padding:0 10px; border-radius:8px;">Buscar</button>
+                </div>
+                <div id="map" style="height: 220px; border-radius: 16px; overflow: hidden; margin-bottom: 12px;"></div>
+                <input type="hidden" id="direccion"><input type="hidden" id="latitud"><input type="hidden" id="longitud">
+                <input type="file" id="multimedia" accept="image/*,video/*" style="margin-bottom: 12px;">
+                <label style="color: white; display: block; margin-bottom: 8px;">Galería promocional (fotos/videos)</label>
+                <input type="file" id="galeria" accept="image/*,video/*" multiple style="margin-bottom: 12px;">
+                <select id="categoria" required>
+                    <option value="Música">🎵 Música</option>
+                    <option value="Gastronomía">🍔 Gastronomía</option>
+                    <option value="Deporte">🏃 Deporte</option>
+                    <option value="Cultura">🎭 Cultura</option>
+                    <option value="Otros">🌟 Otros</option>
+                </select>
+                <label style="display:flex; align-items:center; gap:8px; margin-bottom:15px; font-size:0.9rem;">
+                    <input type="checkbox" id="esPremium" style="width:auto; margin-bottom:0;"> 🔥 <strong>Destacar Anuncio (Evento Premium)</strong>
+                </label>
+                <button type="submit" style="width:100%; background:#4f46e5; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold;">Publicar en Radar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="modalVerificacionPromotor" class="modal">
+        <div class="modal-content" style="max-width: 520px;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="cerrarModalVerificacionPromotor()">&times;</span>
+            <h3 style="color: white; margin-bottom: 10px;">Verificación de cuenta promotor</h3>
+            <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 16px;">
+                Tu perfil ya está guardado y queda pendiente de aprobación manual. Para verificarlo, contacta por WhatsApp y revisaremos tu cuenta lo antes posible.
+            </p>
+            <button id="btnAbrirWhatsappVerificacion" type="button" style="width:100%; background:#25d366; color:#052e16; padding:12px; border-radius:12px; border:none; font-weight:800; cursor:pointer;">
+                Contactar por WhatsApp (643 435 797)
+            </button>
+        </div>
+    </div>
+
+    <div id="modalPromotorSolicitudes" class="modal">
+        <div class="modal-content" style="max-width: 760px;">
+            <span style="float:right; cursor:pointer; font-size:1.5rem;" onclick="document.getElementById('modalPromotorSolicitudes').style.display='none'">&times;</span>
+            <h3 style="color:white; margin-bottom:10px;">Panel de control de promotores</h3>
+            <p style="color:var(--text-muted); margin-bottom:16px;">Como administrador puedes aprobar, denegar o revocar acceso a promotores.</p>
+            <form id="formCrearPromotorAdmin" style="margin-bottom:16px; background:#0f172a; border:1px solid #334155; border-radius:12px; padding:12px;">
+                <p style="margin:0 0 10px; color:#f8fafc; font-weight:700;">Crear perfil de promotor manual</p>
+                <input type="text" id="adminPromotorNombre" placeholder="Nombre del promotor" required>
+                <input type="email" id="adminPromotorEmail" placeholder="Email del promotor" required>
+                <input type="password" id="adminPromotorPassword" placeholder="Contraseña temporal" required>
+                <select id="adminPromotorEstado">
+                    <option value="aprobado">Crear como PROMOTOR APROBADO</option>
+                    <option value="pendiente">Crear como PROMOTOR PENDIENTE</option>
+                </select>
+                <button type="submit" style="width:100%; background:#4f46e5; color:white; border:none; border-radius:10px; padding:10px; font-weight:700; cursor:pointer;">Crear perfil promotor</button>
+            </form>
+            <div id="solicitudesPromotorContainer"></div>
+        </div>
+    </div>
+
+    <div id="chatWindowsContainer" class="chat-windows-container"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

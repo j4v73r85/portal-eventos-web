@@ -1,0 +1,10 @@
+Usuario Plandem
+
+Usuario (email): jmv1985jmv@gmail.com
+Contraseña: Plandem?2026?Plandem
+
+contraseña Cluster0 (mongo Atlas)
+Usuario: jmv1985jmvPlandem
+Contraseña: DVfZxgc8NYuk7f2l
+
+Cadena de conexión: mongodb+srv://jmv1985jmvPlandem:DVfZxgc8NYuk7f2l@cluster0.7fui2kq.mongodb.net/?appName=Cluster0

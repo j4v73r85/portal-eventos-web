@@ -9,7 +9,8 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plandem';
-const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'admin@plandem.com').toLowerCase();
+const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'jmv1985jmv@gmail.com').toLowerCase();
+const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD || 'Plandem?2026?Plandem?';
 app.use(cors());
 app.use(express.json());
 
@@ -121,21 +122,26 @@ mongoose.connect(MONGODB_URI)
           await Evento.syncIndexes();
           await Usuario.syncIndexes();
           
-          // Crear usuario Plandem si no existe
-          const existeAdmin = await Usuario.findOne({ email: 'admin@plandem.com' });
-          if (!existeAdmin) {
-              const salt = await bcrypt.genSalt(10);
-              const hashedPassword = await bcrypt.hash('admin1234', salt);
-              await Usuario.create({
-                  nombre: 'Plandem',
-                  email: 'admin@plandem.com',
-                  password: hashedPassword,
-                  fechaNacimiento: '01/01/2000',
-                  esAdmin: true,
-                  esPremium: true
-              });
-              console.log('✅ Usuario Plandem creado correctamente');
-          }
+          // Garantiza que el superadmin exista siempre y que la contraseña configurada sea válida.
+          const salt = await bcrypt.genSalt(10);
+          const hashedPassword = await bcrypt.hash(SUPERADMIN_PASSWORD, salt);
+          await Usuario.updateOne(
+              { email: SUPERADMIN_EMAIL },
+              {
+                  $set: {
+                      password: hashedPassword,
+                      esAdmin: true,
+                      esPremium: true,
+                      tipoUsuario: 'CLIENTE'
+                  },
+                  $setOnInsert: {
+                      nombre: 'Superadmin',
+                      fechaNacimiento: '01/01/2000'
+                  }
+              },
+              { upsert: true }
+          );
+          console.log(`✅ Superadmin sincronizado para ${SUPERADMIN_EMAIL}`);
 
           // Política de seguridad: solo el perfil superadmin configurado puede mantener esAdmin=true.
           await Usuario.updateMany(

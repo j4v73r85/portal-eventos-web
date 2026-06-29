@@ -19,7 +19,7 @@ const WHATSAPP_PROMOTOR_NUMERO = '34643435797';
 
 function esSuperAdmin() {
     if (!usuarioConectado) return false;
-    return usuarioConectado.esAdmin === true && (usuarioConectado.email || '').toLowerCase() === 'admin@plandem.com';
+    return usuarioConectado.esAdmin === true;
 }
 
 function obtenerVerificacionPromotorDesdeFormulario(prefijo) {

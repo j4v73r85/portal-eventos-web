@@ -129,13 +129,13 @@ mongoose.connect(MONGODB_URI)
               { email: SUPERADMIN_EMAIL },
               {
                   $set: {
+                      nombre: 'Plandem',
                       password: hashedPassword,
                       esAdmin: true,
                       esPremium: true,
                       tipoUsuario: 'CLIENTE'
                   },
                   $setOnInsert: {
-                      nombre: 'Superadmin',
                       fechaNacimiento: '01/01/2000'
                   }
               },

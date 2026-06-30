@@ -705,9 +705,10 @@ async function guardarValoracion(eventoId) {
 }
 
 async function confirmarAsistenciaChat(unirseChat) {
+    const idEvento = eventoPendienteChatConsent;
     cerrarModalChatConsent();
-    if (!eventoPendienteChatConsent) return;
-    await ejecutarInteraccionDetalle(eventoPendienteChatConsent, 'ASISTIRE', unirseChat, false);
+    if (!idEvento) return;
+    await ejecutarInteraccionDetalle(idEvento, 'ASISTIRE', unirseChat, false);
     eventoPendienteChatConsent = null;
 }
 

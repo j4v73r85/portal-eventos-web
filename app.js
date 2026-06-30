@@ -22,6 +22,11 @@ function esSuperAdmin() {
     return usuarioConectado.esAdmin === true;
 }
 
+function tieneAccesoPromotor() {
+    if (!usuarioConectado) return false;
+    return esSuperAdmin() || (usuarioConectado.tipoUsuario === 'PROMOTOR' && usuarioConectado.promotorAprobado);
+}
+
 function obtenerVerificacionPromotorDesdeFormulario(prefijo) {
     const declaracion = document.getElementById(`${prefijo}DeclaracionPromotor`);
     const tipoPromotorLegal = document.getElementById(`${prefijo}TipoPromotorLegal`)?.value || 'EMPRESA';
@@ -413,6 +418,10 @@ function abrirModalPublicarEvento() {
         abrirModalAuth();
         return;
     }
+    if (esSuperAdmin()) {
+        abrirModal();
+        return;
+    }
     if (usuarioConectado.tipoUsuario !== 'PROMOTOR') {
         alert('Tu cuenta no está configurada como promotor. Cambia el tipo de usuario en tu perfil.');
         abrirModalEditarPerfil();
@@ -758,7 +767,7 @@ function renderizarMisEventosGuardados() {
 }
 
 function abrirModal() {
-    if (!usuarioConectado || usuarioConectado.tipoUsuario !== 'PROMOTOR' || !usuarioConectado.promotorAprobado) {
+    if (!tieneAccesoPromotor()) {
         alert('Necesitas una cuenta de promotor aprobada para acceder a este formulario.');
         return;
     }
@@ -1504,44 +1513,54 @@ document.getElementById('btnLogout')?.addEventListener('click', cerrarSesion);
 
 document.getElementById('formEvento').onsubmit = async function(e) {
     e.preventDefault();
-    const formData = new FormData();
-    formData.append('titulo', document.getElementById('titulo').value);
-    formData.append('descripcion', document.getElementById('descripcion').value);
-    formData.append('fechaInicio', document.getElementById('fechaInicio').value);
-    formData.append('fechaFin', document.getElementById('fechaFin').value);
-    formData.append('subtitulo', document.getElementById('subtitulo').value);
-    formData.append('contactoEvento', document.getElementById('contactoEvento').value);
-    formData.append('capacidad', document.getElementById('capacidad').value || 'No definida');
-    formData.append('enlaceVenta', document.getElementById('enlaceVenta').value);
-    formData.append('datosExtra', document.getElementById('datosExtra').value);
-    formData.append('categoria', document.getElementById('categoria').value);
-    formData.append('precio', document.getElementById('precio').value || 0);
-    formData.append('organizador', document.getElementById('organizador').value);
-    formData.append('esPremium', document.getElementById('esPremium').checked);
-    const ubicacionObj = {
-        direccion: document.getElementById('direccion').value || document.getElementById('inputBuscar').value || 'Torredembarra, España',
-        coordenadas: {
-            latitud: parseFloat(document.getElementById('latitud').value) || 41.1444,
-            longitud: parseFloat(document.getElementById('longitud').value) || 1.3961
-        }
-    };
-    formData.append('ubicacion', JSON.stringify(ubicacionObj));
-    const fileFile = document.getElementById('multimedia').files[0];
-    if (fileFile) formData.append('multimedia', fileFile);
-    const galeria = document.getElementById('galeria').files;
-    for (let i = 0; i < galeria.length; i++) {
-        formData.append('galeria', galeria[i]);
+    if (!tieneAccesoPromotor()) {
+        alert('Necesitas una cuenta de promotor aprobada para publicar eventos.');
+        return;
     }
-    const res = await fetch(`${API_BASE}/api/eventos`, { method: 'POST', body: formData });
-    if (res.ok) {
-        cerrarModal();
-        cargarPortal();
-        renderizarMisEventosGuardados();
-        document.getElementById('formEvento').reset();
-        if (markerModal) { mapModal.removeLayer(markerModal); markerModal = null; }
-    } else {
+    try {
+        const formData = new FormData();
+        const precioInput = document.getElementById('precio');
+        formData.append('titulo', document.getElementById('titulo').value);
+        formData.append('descripcion', document.getElementById('descripcion').value);
+        formData.append('fechaInicio', document.getElementById('fechaInicio').value);
+        formData.append('fechaFin', document.getElementById('fechaFin').value);
+        formData.append('subtitulo', document.getElementById('subtitulo').value);
+        formData.append('contactoEvento', document.getElementById('contactoEvento').value);
+        formData.append('capacidad', document.getElementById('capacidad').value || 'No definida');
+        formData.append('enlaceVenta', document.getElementById('enlaceVenta').value);
+        formData.append('datosExtra', document.getElementById('datosExtra').value);
+        formData.append('categoria', document.getElementById('categoria').value);
+        formData.append('precio', precioInput?.value || 0);
+        formData.append('organizador', document.getElementById('organizador').value);
+        formData.append('esPremium', document.getElementById('esPremium').checked);
+        const ubicacionObj = {
+            direccion: document.getElementById('direccion').value || document.getElementById('inputBuscar').value || 'Torredembarra, España',
+            coordenadas: {
+                latitud: parseFloat(document.getElementById('latitud').value) || 41.1444,
+                longitud: parseFloat(document.getElementById('longitud').value) || 1.3961
+            }
+        };
+        formData.append('ubicacion', JSON.stringify(ubicacionObj));
+        const fileFile = document.getElementById('multimedia').files[0];
+        if (fileFile) formData.append('multimedia', fileFile);
+        const galeria = document.getElementById('galeria').files;
+        for (let i = 0; i < galeria.length; i++) {
+            formData.append('galeria', galeria[i]);
+        }
+        const res = await fetch(`${API_BASE}/api/eventos`, { method: 'POST', body: formData });
+        if (res.ok) {
+            cerrarModal();
+            cargarPortal();
+            renderizarMisEventosGuardados();
+            document.getElementById('formEvento').reset();
+            if (markerModal) { mapModal.removeLayer(markerModal); markerModal = null; }
+            return;
+        }
         const errData = await res.json();
         alert('Error al guardar: ' + errData.error);
+    } catch (error) {
+        console.error('Error publicando evento:', error);
+        alert('No se pudo publicar el evento. Revisa los campos y vuelve a intentarlo.');
     }
 };
 

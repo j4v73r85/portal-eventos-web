@@ -105,12 +105,38 @@ const UsuarioSchema = new mongoose.Schema({
 
 const Usuario = mongoose.model('Usuario', UsuarioSchema);
 
+function esSuperadminEmail(email) {
+    return (email || '').toLowerCase() === SUPERADMIN_EMAIL;
+}
+
+function serializarUsuario(usuario) {
+    const esSuperadmin = usuario?.esAdmin === true && esSuperadminEmail(usuario.email);
+    return {
+        id: usuario._id,
+        nombre: usuario.nombre,
+        email: usuario.email,
+        esAdmin: esSuperadmin,
+        tipoUsuario: esSuperadmin ? 'PROMOTOR' : (usuario.tipoUsuario || 'CLIENTE'),
+        promotorAprobado: esSuperadmin ? true : (usuario.promotorAprobado || false),
+        solicitudPromotor: usuario.solicitudPromotor || '',
+        verificacionPromotor: usuario.verificacionPromotor || {},
+        esPremium: usuario.esPremium,
+        colorSemaforo: usuario.colorSemaforo,
+        descripcionPersonal: usuario.descripcionPersonal,
+        fotos: usuario.fotos,
+        favoritos: usuario.favoritos || [],
+        asistencias: usuario.asistencias || [],
+        chatsActivos: usuario.chatsActivos || [],
+        valoraciones: usuario.valoraciones || []
+    };
+}
+
 async function obtenerAdminValido(adminId) {
     if (!adminId) return null;
     const admin = await Usuario.findById(adminId).select('email esAdmin');
     if (!admin) return null;
     if (!admin.esAdmin) return null;
-    if ((admin.email || '').toLowerCase() !== SUPERADMIN_EMAIL) return null;
+    if (!esSuperadminEmail(admin.email)) return null;
     return admin;
 }
 
@@ -133,7 +159,8 @@ mongoose.connect(MONGODB_URI)
                       password: hashedPassword,
                       esAdmin: true,
                       esPremium: true,
-                      tipoUsuario: 'CLIENTE'
+                      tipoUsuario: 'PROMOTOR',
+                      promotorAprobado: true
                   },
                   $setOnInsert: {
                       fechaNacimiento: '01/01/2000'
@@ -150,7 +177,7 @@ mongoose.connect(MONGODB_URI)
           );
           await Usuario.updateOne(
               { email: SUPERADMIN_EMAIL },
-              { $set: { esAdmin: true } }
+              { $set: { esAdmin: true, tipoUsuario: 'PROMOTOR', promotorAprobado: true } }
           );
       } catch (e) { console.error('Error al inicializar datos:', e); }
   })
@@ -198,11 +225,11 @@ app.get('/api/usuarios/:id', async (req, res) => {
         const { id } = req.params;
         const usuario = await Usuario.findById(id).select('-password');
         if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado.' });
-        res.json({ usuario });
+        res.json({ usuario: serializarUsuario(usuario) });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/eventos', upload.single('multimedia'), async (req, res) => {
+app.post('/api/eventos', upload.fields([{ name: 'multimedia', maxCount: 1 }, { name: 'galeria', maxCount: 10 }]), async (req, res) => {
     try {
         const { titulo, ubicacion } = req.body;
         const existe = await Evento.findOne({ titulo: titulo });
@@ -220,7 +247,14 @@ app.post('/api/eventos', upload.single('multimedia'), async (req, res) => {
             }
         }
         
-        if (req.file) datosEvento.multimediaUrl = `/uploads/${req.file.filename}`;
+        if (req.files) {
+            if (req.files.multimedia && req.files.multimedia[0]) {
+                datosEvento.multimediaUrl = `/uploads/${req.files.multimedia[0].filename}`;
+            }
+            if (req.files.galeria) {
+                datosEvento.galeria = req.files.galeria.map(file => `/uploads/${file.filename}`);
+            }
+        }
 
         const nuevoEvento = new Evento(datosEvento);
         await nuevoEvento.save();
@@ -433,23 +467,7 @@ app.post('/api/usuarios/login', async (req, res) => {
 
         res.json({
             mensaje: "Login correcto",
-            usuario: {
-                id: usuario._id,
-                nombre: usuario.nombre,
-                email: usuario.email,
-                esAdmin: usuario.esAdmin === true && (usuario.email || '').toLowerCase() === SUPERADMIN_EMAIL,
-                tipoUsuario: usuario.tipoUsuario || 'CLIENTE',
-                promotorAprobado: usuario.promotorAprobado || false,
-                solicitudPromotor: usuario.solicitudPromotor || '',
-                verificacionPromotor: usuario.verificacionPromotor || {},
-                esPremium: usuario.esPremium,
-                colorSemaforo: usuario.colorSemaforo,
-                descripcionPersonal: usuario.descripcionPersonal,
-                favoritos: usuario.favoritos || [],
-                asistencias: usuario.asistencias || [],
-                chatsActivos: usuario.chatsActivos || [],
-                valoraciones: usuario.valoraciones || []
-            }
+            usuario: serializarUsuario(usuario)
         });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -511,7 +529,7 @@ app.put('/api/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
         }
         if (esAdmin !== undefined) {
             if (!adminValido) return res.status(403).json({ error: 'Solo el superadmin puede editar privilegios admin.' });
-            const targetIsSuperadminEmail = (usuarioObjetivo.email || '').toLowerCase() === SUPERADMIN_EMAIL;
+            const targetIsSuperadminEmail = esSuperadminEmail(usuarioObjetivo.email);
             if (esAdmin === true || esAdmin === 'true') {
                 if (!targetIsSuperadminEmail) return res.status(403).json({ error: 'El rol admin solo se permite al perfil superadmin configurado.' });
                 datosActualizados.esAdmin = true;
@@ -523,6 +541,11 @@ app.put('/api/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
             datosActualizados.verificacionPromotor = typeof verificacionPromotor === 'string'
                 ? JSON.parse(verificacionPromotor)
                 : verificacionPromotor;
+        }
+        if (esSuperadminEmail(usuarioObjetivo.email)) {
+            datosActualizados.esAdmin = true;
+            datosActualizados.tipoUsuario = 'PROMOTOR';
+            datosActualizados.promotorAprobado = true;
         }
         
         if (req.file) {
@@ -536,20 +559,7 @@ app.put('/api/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
         res.json({ 
             success: true, 
             mensaje: 'Perfil actualizado correctamente.',
-            usuario: {
-                id: usuarioActualizado._id,
-                nombre: usuarioActualizado.nombre,
-                email: usuarioActualizado.email,
-                esAdmin: usuarioActualizado.esAdmin === true && (usuarioActualizado.email || '').toLowerCase() === SUPERADMIN_EMAIL,
-                tipoUsuario: usuarioActualizado.tipoUsuario,
-                promotorAprobado: usuarioActualizado.promotorAprobado,
-                solicitudPromotor: usuarioActualizado.solicitudPromotor,
-                verificacionPromotor: usuarioActualizado.verificacionPromotor,
-                colorSemaforo: usuarioActualizado.colorSemaforo,
-                descripcionPersonal: usuarioActualizado.descripcionPersonal,
-                fotos: usuarioActualizado.fotos,
-                valoraciones: usuarioActualizado.valoraciones || []
-            }
+            usuario: serializarUsuario(usuarioActualizado)
         });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });

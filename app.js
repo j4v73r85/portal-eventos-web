@@ -1294,8 +1294,152 @@ function cerrarSesion() {
     cargarPortal();
 }
 
-function crearMensajeChatElement(mensaje) {
+function usuarioPuedeModerarChat() {
+    return esSuperAdmin();
+}
+
+function obtenerEstadoModeracionChatBase() {
+    return {
+        bloqueado: false,
+        puedeModerar: false,
+        silenciado: false,
+        expulsado: false,
+        muteados: [],
+        expulsados: []
+    };
+}
+
+function aplicarEstadoModeracionChat(idEvento, moderation = {}) {
+    const chatInfo = chatVentanasActivas[idEvento];
+    if (!chatInfo) return;
+    chatInfo.moderation = {
+        ...obtenerEstadoModeracionChatBase(),
+        ...moderation,
+        muteados: Array.isArray(moderation.muteados) ? moderation.muteados : [],
+        expulsados: Array.isArray(moderation.expulsados) ? moderation.expulsados : []
+    };
+    renderizarPanelModeracionChat(idEvento);
+    actualizarEstadoEntradaChat(idEvento);
+}
+
+function obtenerTextoRestriccionChat(moderation) {
+    if (moderation.expulsado) return 'Has sido expulsado de este chat por el moderador.';
+    if (moderation.silenciado) return 'Has sido silenciado en este chat. Puedes leer, pero no escribir.';
+    if (moderation.bloqueado) return 'El chat está bloqueado temporalmente por moderación.';
+    return '';
+}
+
+function actualizarEstadoEntradaChat(idEvento) {
+    const chatInfo = chatVentanasActivas[idEvento];
+    if (!chatInfo) return;
+    const moderation = chatInfo.moderation || obtenerEstadoModeracionChatBase();
+    const bloqueadoParaUsuario = !usuarioPuedeModerarChat() && (moderation.bloqueado || moderation.silenciado || moderation.expulsado);
+    chatInfo.input.disabled = bloqueadoParaUsuario;
+    if (chatInfo.sendButton) chatInfo.sendButton.disabled = bloqueadoParaUsuario;
+    chatInfo.input.placeholder = bloqueadoParaUsuario
+        ? obtenerTextoRestriccionChat(moderation)
+        : 'Escribe tu mensaje...';
+    if (chatInfo.estadoModeracion) {
+        const texto = obtenerTextoRestriccionChat(moderation);
+        chatInfo.estadoModeracion.textContent = texto;
+        chatInfo.estadoModeracion.style.display = texto ? 'block' : 'none';
+    }
+}
+
+function togglePanelModeracionChat(idEvento) {
+    const chatInfo = chatVentanasActivas[idEvento];
+    if (!chatInfo || !chatInfo.adminPanel) return;
+    const visible = chatInfo.adminPanel.style.display === 'block';
+    chatInfo.adminPanel.style.display = visible ? 'none' : 'block';
+}
+
+function moderarUsuarioChat(idEvento, accion, usuarioId, autor = '') {
+    return moderarChatEvento(idEvento, accion, { usuarioId, autor });
+}
+
+function borrarMensajeChat(idEvento, messageId) {
+    return moderarChatEvento(idEvento, 'borrar_mensaje', { messageId });
+}
+
+function renderizarPanelModeracionChat(idEvento) {
+    const chatInfo = chatVentanasActivas[idEvento];
+    if (!chatInfo || !chatInfo.adminPanel || !usuarioPuedeModerarChat()) return;
+    const moderation = chatInfo.moderation || obtenerEstadoModeracionChatBase();
+    const escaparParametro = (valor = '') => String(valor).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const muteados = moderation.muteados.length === 0
+        ? '<p class="chat-admin-empty">Nadie silenciado.</p>'
+        : moderation.muteados.map((item) => `
+            <div class="chat-admin-user-row">
+                <span>${item.autor || 'Usuario'}</span>
+                <button type="button" onclick="moderarUsuarioChat('${idEvento}', 'reactivar_usuario', '${escaparParametro(item.usuarioId)}', '${escaparParametro(item.autor || 'Usuario')}')">Reactivar</button>
+            </div>`).join('');
+    const expulsados = moderation.expulsados.length === 0
+        ? '<p class="chat-admin-empty">Nadie expulsado.</p>'
+        : moderation.expulsados.map((item) => `
+            <div class="chat-admin-user-row">
+                <span>${item.autor || 'Usuario'}</span>
+                <button type="button" onclick="moderarUsuarioChat('${idEvento}', 'readmitir_usuario', '${escaparParametro(item.usuarioId)}', '${escaparParametro(item.autor || 'Usuario')}')">Readmitir</button>
+            </div>`).join('');
+
+    chatInfo.adminPanel.innerHTML = `
+        <div class="chat-admin-panel-header">
+            <strong>Moderación</strong>
+            <button type="button" onclick="moderarChatEvento('${idEvento}', '${moderation.bloqueado ? 'desbloquear_chat' : 'bloquear_chat'}')">${moderation.bloqueado ? 'Desbloquear chat' : 'Bloquear chat'}</button>
+        </div>
+        <div class="chat-admin-panel-section">
+            <div class="chat-admin-panel-title">Usuarios silenciados</div>
+            ${muteados}
+        </div>
+        <div class="chat-admin-panel-section">
+            <div class="chat-admin-panel-title">Usuarios expulsados</div>
+            ${expulsados}
+        </div>
+    `;
+}
+
+async function moderarChatEvento(idEvento, accion, extra = {}) {
+    if (!usuarioPuedeModerarChat()) {
+        alert('Solo el superadmin puede moderar este chat.');
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/eventos/${idEvento}/chat/moderacion`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-admin-id': usuarioConectado?.id || usuarioConectado?._id
+            },
+            body: JSON.stringify({ accion, ...extra })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || 'No se pudo aplicar la moderación.');
+            return;
+        }
+        aplicarEstadoModeracionChat(idEvento, data.moderation || obtenerEstadoModeracionChatBase());
+        renderizarMensajesChat(idEvento, data.messages || []);
+    } catch (err) {
+        console.error('Error moderando chat:', err);
+        alert('Error al aplicar la moderación del chat.');
+    }
+}
+
+function toggleMenuModeracionMensaje(idEvento, messageId) {
+    const chatInfo = chatVentanasActivas[idEvento];
+    if (!chatInfo) return;
+    chatInfo.ventana.querySelectorAll('.chat-admin-message-menu').forEach((menu) => {
+        if (menu.dataset.messageId !== String(messageId)) menu.style.display = 'none';
+    });
+    const menu = chatInfo.ventana.querySelector(`.chat-admin-message-menu[data-message-id="${messageId}"]`);
+    if (!menu) return;
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+}
+
+function crearMensajeChatElement(idEvento, mensaje) {
     const esPropio = usuarioConectado && mensaje.usuarioId && (mensaje.usuarioId === (usuarioConectado.id || usuarioConectado._id));
+    const autorSeguro = String(mensaje.autor || 'Usuario').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const usuarioIdSeguro = String(mensaje.usuarioId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const mensajeIdSeguro = String(mensaje._id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const wrapper = document.createElement('div');
     wrapper.className = `chat-message-wrapper${esPropio ? ' own' : ''}`;
 
@@ -1310,6 +1454,20 @@ function crearMensajeChatElement(mensaje) {
     bubble.className = `chat-message${esPropio ? ' own' : ''}`;
     bubble.innerHTML = `<div class="author">${mensaje.autor || 'Anónimo'}</div><div class="text">${mensaje.texto}</div>`;
 
+    if (usuarioPuedeModerarChat() && mensaje.usuarioId) {
+        const acciones = document.createElement('div');
+        acciones.className = 'chat-admin-message-actions';
+        acciones.innerHTML = `
+            <button type="button" class="chat-admin-toggle" onclick="toggleMenuModeracionMensaje('${idEvento}', '${mensajeIdSeguro}')">⋯</button>
+            <div class="chat-admin-message-menu" data-message-id="${mensajeIdSeguro}" style="display:none;">
+                <button type="button" onclick="borrarMensajeChat('${idEvento}', '${mensajeIdSeguro}')">Borrar mensaje</button>
+                <button type="button" onclick="moderarUsuarioChat('${idEvento}', 'silenciar_usuario', '${usuarioIdSeguro}', '${autorSeguro}')">Silenciar</button>
+                <button type="button" onclick="moderarUsuarioChat('${idEvento}', 'expulsar_usuario', '${usuarioIdSeguro}', '${autorSeguro}')">Expulsar</button>
+            </div>
+        `;
+        wrapper.appendChild(acciones);
+    }
+
     wrapper.appendChild(avatar);
     wrapper.appendChild(bubble);
     return wrapper;
@@ -1320,7 +1478,7 @@ function renderizarMensajesChat(idEvento, mensajes) {
     if (!chatInfo) return;
     chatInfo.mensajesContainer.innerHTML = '';
     mensajes.forEach((mensaje) => {
-        chatInfo.mensajesContainer.appendChild(crearMensajeChatElement(mensaje));
+        chatInfo.mensajesContainer.appendChild(crearMensajeChatElement(idEvento, mensaje));
     });
     chatInfo.mensajesContainer.scrollTop = chatInfo.mensajesContainer.scrollHeight;
 }
@@ -1329,12 +1487,20 @@ async function obtenerMensajesChat(idEvento) {
     const chatInfo = chatVentanasActivas[idEvento];
     if (!chatInfo) return;
     try {
-        const res = await fetch(`${API_BASE}/api/eventos/${idEvento}/chat`);
+        const res = await fetch(`${API_BASE}/api/eventos/${idEvento}/chat`, {
+            headers: usuarioConectado ? { 'x-user-id': usuarioConectado.id || usuarioConectado._id } : {}
+        });
         if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            if (errData.error) alert(errData.error);
             console.error('Error cargando mensajes de chat:', res.statusText);
             return;
         }
-        const mensajes = await res.json();
+        const data = await res.json();
+        const mensajes = Array.isArray(data) ? data : (data.messages || []);
+        if (!Array.isArray(data)) {
+            aplicarEstadoModeracionChat(idEvento, data.moderation || obtenerEstadoModeracionChatBase());
+        }
         renderizarMensajesChat(idEvento, mensajes);
     } catch (err) {
         console.error('Error de red al obtener chat:', err);
@@ -1369,7 +1535,8 @@ async function enviarMensajeChat(e, idEvento) {
             alert(data.error || 'No se pudo enviar el mensaje.');
             return;
         }
-        renderizarMensajesChat(idEvento, data.chatMessages || []);
+        aplicarEstadoModeracionChat(idEvento, data.moderation || obtenerEstadoModeracionChatBase());
+        renderizarMensajesChat(idEvento, data.messages || data.chatMessages || []);
         chatInfo.input.value = '';
     } catch (err) {
         console.error('Error al enviar mensaje del chat:', err);
@@ -1426,18 +1593,21 @@ function abrirChatFlotante(idEvento, tituloEvento) {
                 <small>Chatea con otros asistentes</small>
             </div>
             <div style="display:flex; gap:8px;">
+                ${usuarioPuedeModerarChat() ? `<button type="button" onclick="togglePanelModeracionChat('${idEvento}')">🛡</button>` : ''}
                 <button type="button" onclick="maximizarChat('${idEvento}')">⬜</button>
                 <button type="button" onclick="toggleMinimizarChat('${idEvento}')">_</button>
                 <button type="button" onclick="cerrarChat('${idEvento}')">✕</button>
             </div>
         </div>
         <div class="chat-window-body">
+            ${usuarioPuedeModerarChat() ? '<div class="chat-admin-panel" style="display:none;"></div>' : ''}
             <div class="chat-window-messages"></div>
             <div class="chat-window-footer">
                 <form id="chatForm-${idEvento}">
                     <input type="text" placeholder="Escribe tu mensaje..." autocomplete="off" />
                     <button type="submit">Enviar</button>
                 </form>
+                <div class="chat-window-status" style="display:none;"></div>
             </div>
         </div>
     `;
@@ -1447,11 +1617,18 @@ function abrirChatFlotante(idEvento, tituloEvento) {
     const mensajesContainer = ventana.querySelector('.chat-window-messages');
     const form = ventana.querySelector(`#chatForm-${idEvento}`);
     const input = form.querySelector('input');
+    const sendButton = form.querySelector('button');
+    const adminPanel = ventana.querySelector('.chat-admin-panel');
+    const estadoModeracion = ventana.querySelector('.chat-window-status');
 
     chatVentanasActivas[idEvento] = {
         ventana,
         mensajesContainer,
-        input
+        input,
+        sendButton,
+        adminPanel,
+        estadoModeracion,
+        moderation: obtenerEstadoModeracionChatBase()
     };
 
     form.addEventListener('submit', (event) => enviarMensajeChat(event, idEvento));

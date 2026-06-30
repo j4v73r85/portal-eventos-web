@@ -131,6 +131,45 @@ function serializarUsuario(usuario) {
     };
 }
 
+function normalizarModeracionChat(chatModeration = {}) {
+    return {
+        bloqueado: chatModeration?.bloqueado === true,
+        muteados: Array.isArray(chatModeration?.muteados) ? chatModeration.muteados : [],
+        expulsados: Array.isArray(chatModeration?.expulsados) ? chatModeration.expulsados : []
+    };
+}
+
+function buscarModeracionUsuario(lista = [], usuarioId) {
+    return lista.find((item) => String(item.usuarioId) === String(usuarioId)) || null;
+}
+
+function serializarMensajesChat(chatMessages = []) {
+    return chatMessages.map((mensaje) => ({
+        _id: mensaje._id,
+        autor: mensaje.autor || 'Anónimo',
+        usuarioId: mensaje.usuarioId || '',
+        texto: mensaje.texto || '',
+        creado: mensaje.creado || null
+    }));
+}
+
+function construirRespuestaChat(evento, viewerId, esAdmin) {
+    const moderacion = normalizarModeracionChat(evento.chatModeration);
+    const usuarioMuteado = viewerId ? buscarModeracionUsuario(moderacion.muteados, viewerId) : null;
+    const usuarioExpulsado = viewerId ? buscarModeracionUsuario(moderacion.expulsados, viewerId) : null;
+    return {
+        messages: serializarMensajesChat(evento.chatMessages || []),
+        moderation: {
+            bloqueado: moderacion.bloqueado,
+            puedeModerar: esAdmin,
+            silenciado: !!usuarioMuteado,
+            expulsado: !!usuarioExpulsado,
+            muteados: esAdmin ? moderacion.muteados : [],
+            expulsados: esAdmin ? moderacion.expulsados : []
+        }
+    };
+}
+
 async function obtenerAdminValido(adminId) {
     if (!adminId) return null;
     const admin = await Usuario.findById(adminId).select('email esAdmin');
@@ -475,9 +514,15 @@ app.post('/api/usuarios/login', async (req, res) => {
 app.get('/api/eventos/:id/chat', async (req, res) => {
     try {
         const { id } = req.params;
-        const evento = await Evento.findById(id).select('chatMessages');
+        const viewerId = req.header('x-user-id');
+        const adminValido = await obtenerAdminValido(viewerId);
+        const evento = await Evento.findById(id).select('chatMessages chatModeration');
         if (!evento) return res.status(404).json({ error: 'Evento no encontrado.' });
-        res.json(evento.chatMessages || []);
+        const moderacion = normalizarModeracionChat(evento.chatModeration);
+        if (!adminValido && viewerId && buscarModeracionUsuario(moderacion.expulsados, viewerId)) {
+            return res.status(403).json({ error: 'Has sido expulsado de este chat por moderación.' });
+        }
+        res.json(construirRespuestaChat(evento, viewerId, !!adminValido));
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -489,6 +534,21 @@ app.post('/api/eventos/:id/chat', async (req, res) => {
         if (!usuarioId) return res.status(401).json({ error: 'Debes estar autenticado para enviar mensajes.' });
         if (!texto || texto.trim().length === 0) return res.status(400).json({ error: 'El mensaje no puede estar vacío.' });
 
+        const adminValido = await obtenerAdminValido(usuarioId);
+        const eventoActual = await Evento.findById(id).select('chatModeration');
+        if (!eventoActual) return res.status(404).json({ error: 'Evento no encontrado.' });
+
+        const moderacion = normalizarModeracionChat(eventoActual.chatModeration);
+        if (!adminValido && moderacion.bloqueado) {
+            return res.status(403).json({ error: 'El chat está bloqueado temporalmente por moderación.' });
+        }
+        if (!adminValido && buscarModeracionUsuario(moderacion.expulsados, usuarioId)) {
+            return res.status(403).json({ error: 'Has sido expulsado de este chat.' });
+        }
+        if (!adminValido && buscarModeracionUsuario(moderacion.muteados, usuarioId)) {
+            return res.status(403).json({ error: 'Has sido silenciado en este chat.' });
+        }
+
         const evento = await Evento.findByIdAndUpdate(
             id,
             { $push: { chatMessages: { autor: autor || 'Anónimo', usuarioId, texto: texto.trim(), creado: new Date() } } },
@@ -496,7 +556,61 @@ app.post('/api/eventos/:id/chat', async (req, res) => {
         );
 
         if (!evento) return res.status(404).json({ error: 'Evento no encontrado.' });
-        res.json({ success: true, mensaje: 'Mensaje guardado correctamente.', chatMessages: evento.chatMessages });
+        res.json({ success: true, mensaje: 'Mensaje guardado correctamente.', ...construirRespuestaChat(evento, usuarioId, !!adminValido) });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/eventos/:id/chat/moderacion', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const adminId = req.header('x-admin-id') || req.body.adminId;
+        const adminValido = await obtenerAdminValido(adminId);
+        if (!adminValido) return res.status(403).json({ error: 'No autorizado para moderar este chat.' });
+
+        const { accion, usuarioId, autor, messageId } = req.body;
+        const evento = await Evento.findById(id);
+        if (!evento) return res.status(404).json({ error: 'Evento no encontrado.' });
+
+        const moderacion = normalizarModeracionChat(evento.chatModeration);
+        const marcaTiempo = new Date();
+        const usuarioModerado = {
+            usuarioId: usuarioId || '',
+            autor: autor || 'Usuario',
+            fecha: marcaTiempo,
+            adminId: adminValido._id
+        };
+
+        if (accion === 'bloquear_chat') {
+            moderacion.bloqueado = true;
+        } else if (accion === 'desbloquear_chat') {
+            moderacion.bloqueado = false;
+        } else if (accion === 'silenciar_usuario') {
+            if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario a silenciar.' });
+            moderacion.muteados = moderacion.muteados.filter((item) => String(item.usuarioId) !== String(usuarioId));
+            moderacion.muteados.push(usuarioModerado);
+        } else if (accion === 'reactivar_usuario') {
+            if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario a reactivar.' });
+            moderacion.muteados = moderacion.muteados.filter((item) => String(item.usuarioId) !== String(usuarioId));
+        } else if (accion === 'expulsar_usuario') {
+            if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario a expulsar.' });
+            moderacion.expulsados = moderacion.expulsados.filter((item) => String(item.usuarioId) !== String(usuarioId));
+            moderacion.expulsados.push(usuarioModerado);
+            moderacion.muteados = moderacion.muteados.filter((item) => String(item.usuarioId) !== String(usuarioId));
+            await Usuario.findByIdAndUpdate(usuarioId, { $pull: { chatsActivos: id } });
+        } else if (accion === 'readmitir_usuario') {
+            if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario a readmitir.' });
+            moderacion.expulsados = moderacion.expulsados.filter((item) => String(item.usuarioId) !== String(usuarioId));
+        } else if (accion === 'borrar_mensaje') {
+            if (!messageId) return res.status(400).json({ error: 'Falta el mensaje a borrar.' });
+            evento.chatMessages = (evento.chatMessages || []).filter((mensaje) => String(mensaje._id) !== String(messageId));
+        } else {
+            return res.status(400).json({ error: 'Acción de moderación no soportada.' });
+        }
+
+        evento.chatModeration = moderacion;
+        await evento.save();
+
+        res.json({ success: true, mensaje: 'Moderación aplicada correctamente.', ...construirRespuestaChat(evento, adminId, true) });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 

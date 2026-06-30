@@ -135,7 +135,8 @@ function normalizarModeracionChat(chatModeration = {}) {
     return {
         bloqueado: chatModeration?.bloqueado === true,
         muteados: Array.isArray(chatModeration?.muteados) ? chatModeration.muteados : [],
-        expulsados: Array.isArray(chatModeration?.expulsados) ? chatModeration.expulsados : []
+        expulsados: Array.isArray(chatModeration?.expulsados) ? chatModeration.expulsados : [],
+        avisados: Array.isArray(chatModeration?.avisados) ? chatModeration.avisados : []
     };
 }
 
@@ -157,6 +158,7 @@ function construirRespuestaChat(evento, viewerId, esAdmin) {
     const moderacion = normalizarModeracionChat(evento.chatModeration);
     const usuarioMuteado = viewerId ? buscarModeracionUsuario(moderacion.muteados, viewerId) : null;
     const usuarioExpulsado = viewerId ? buscarModeracionUsuario(moderacion.expulsados, viewerId) : null;
+    const avisosUsuario = viewerId ? moderacion.avisados.filter((item) => String(item.usuarioId) === String(viewerId)) : [];
     return {
         messages: serializarMensajesChat(evento.chatMessages || []),
         moderation: {
@@ -164,8 +166,10 @@ function construirRespuestaChat(evento, viewerId, esAdmin) {
             puedeModerar: esAdmin,
             silenciado: !!usuarioMuteado,
             expulsado: !!usuarioExpulsado,
+            avisosUsuario,
             muteados: esAdmin ? moderacion.muteados : [],
-            expulsados: esAdmin ? moderacion.expulsados : []
+            expulsados: esAdmin ? moderacion.expulsados : [],
+            avisados: esAdmin ? moderacion.avisados : []
         }
     };
 }
@@ -584,6 +588,15 @@ app.post('/api/eventos/:id/chat/moderacion', async (req, res) => {
             moderacion.bloqueado = true;
         } else if (accion === 'desbloquear_chat') {
             moderacion.bloqueado = false;
+        } else if (accion === 'avisar_usuario') {
+            if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario a avisar.' });
+            moderacion.avisados.push({
+                ...usuarioModerado,
+                motivo: req.body.motivo || 'Comportamiento inapropiado detectado en el chat.'
+            });
+        } else if (accion === 'limpiar_avisos_usuario') {
+            if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario para limpiar avisos.' });
+            moderacion.avisados = moderacion.avisados.filter((item) => String(item.usuarioId) !== String(usuarioId));
         } else if (accion === 'silenciar_usuario') {
             if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario a silenciar.' });
             moderacion.muteados = moderacion.muteados.filter((item) => String(item.usuarioId) !== String(usuarioId));
@@ -600,6 +613,9 @@ app.post('/api/eventos/:id/chat/moderacion', async (req, res) => {
         } else if (accion === 'readmitir_usuario') {
             if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario a readmitir.' });
             moderacion.expulsados = moderacion.expulsados.filter((item) => String(item.usuarioId) !== String(usuarioId));
+        } else if (accion === 'borrar_mensajes_usuario') {
+            if (!usuarioId) return res.status(400).json({ error: 'Falta el usuario cuyos mensajes se van a borrar.' });
+            evento.chatMessages = (evento.chatMessages || []).filter((mensaje) => String(mensaje.usuarioId) !== String(usuarioId));
         } else if (accion === 'borrar_mensaje') {
             if (!messageId) return res.status(400).json({ error: 'Falta el mensaje a borrar.' });
             evento.chatMessages = (evento.chatMessages || []).filter((mensaje) => String(mensaje._id) !== String(messageId));

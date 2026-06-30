@@ -657,11 +657,71 @@ body { background-color: var(--bg-main); color: var(--text-main); padding: 20px;
     gap: 8px;
     margin-top: 10px;
 }
+.chat-admin-layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.95fr) minmax(220px, 1.05fr);
+    gap: 14px;
+}
 .chat-admin-panel-title {
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: #cbd5e1;
+}
+.chat-admin-user-list {
+    display: grid;
+    gap: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+.chat-admin-user-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(15,23,42,0.72);
+    border: 1px solid rgba(148,163,184,0.12);
+    color: #f8fafc;
+    cursor: pointer;
+    text-align: left;
+}
+.chat-admin-user-item.active {
+    border-color: rgba(99,102,241,0.7);
+    background: rgba(79,70,229,0.24);
+}
+.chat-admin-user-badges {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+.chat-admin-user-badges span {
+    font-size: 0.68rem;
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    color: #cbd5e1;
+}
+.chat-admin-target-card {
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(15,23,42,0.78);
+    border: 1px solid rgba(148,163,184,0.12);
+}
+.chat-admin-target-name {
+    color: #f8fafc;
+    font-weight: 700;
+}
+.chat-admin-target-meta {
+    color: #94a3b8;
+    font-size: 0.82rem;
+    margin-top: 4px;
+}
+.chat-admin-actions-grid {
+    display: grid;
+    gap: 8px;
 }
 .chat-admin-user-row {
     display: flex;
@@ -720,6 +780,20 @@ body { background-color: var(--bg-main); color: var(--text-main); padding: 20px;
     margin-top: 10px;
     font-size: 0.82rem;
     color: #fca5a5;
+}
+@media (max-width: 640px) {
+    .chat-admin-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .chat-admin-user-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .chat-admin-user-badges {
+        justify-content: flex-start;
+    }
 }
 .chat-window-footer {
     padding: 12px 14px;

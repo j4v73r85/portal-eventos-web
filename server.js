@@ -230,7 +230,7 @@ function validarPaisCodigo(pais) {
     return PAISES_PERMITIDOS.has(String(pais || '').toUpperCase());
 }
 
-function normalizarDireccionSeleccionada(direccion) {
+function normalizarDireccionSeleccionada(direccion, paisFallback = '') {
     if (!direccion) return null;
 
     let parsed = direccion;
@@ -246,7 +246,7 @@ function normalizarDireccionSeleccionada(direccion) {
     const longitud = Number(parsed?.longitud);
     const displayName = limpiarTexto(parsed?.displayName || parsed?.display_name || '', 260);
     const placeId = limpiarTexto(parsed?.placeId || parsed?.place_id || '', 64);
-    const countryCode = limpiarTexto(parsed?.countryCode || parsed?.country_code || '', 4).toUpperCase();
+    const countryCode = limpiarTexto(parsed?.countryCode || parsed?.country_code || paisFallback || '', 4).toUpperCase();
     const countryName = limpiarTexto(parsed?.countryName || parsed?.country_name || '', 80);
 
     if (!placeId || !displayName || Number.isNaN(latitud) || Number.isNaN(longitud) || !validarPaisCodigo(countryCode)) {
@@ -1388,7 +1388,7 @@ app.post('/api/usuarios/registro', registerLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Debes seleccionar un país válido de la lista.' });
         }
 
-        const direccionNormalizada = normalizarDireccionSeleccionada(direccionResidencia);
+        const direccionNormalizada = normalizarDireccionSeleccionada(direccionResidencia, pais);
         if (!direccionNormalizada) {
             return res.status(400).json({ error: 'Debes seleccionar una dirección válida desde las sugerencias.' });
         }
@@ -1821,6 +1821,12 @@ app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async 
             return res.status(403).json({ error: 'No autorizado para editar este usuario.' });
         }
 
+        const esPerfilPrivilegiado = Boolean(
+            adminValido ||
+            (req.authUser?.esAdmin === true && esSuperadminEmail(req.authUser.email)) ||
+            (req.authUser?.esModerador === true && !esSuperadminEmail(req.authUser.email))
+        );
+
         const usuarioObjetivo = await Usuario.findById(id).select('email');
         if (!usuarioObjetivo) return res.status(404).json({ error: 'Usuario no encontrado.' });
 
@@ -1828,27 +1834,32 @@ app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async 
         if (colorSemaforo) datosActualizados.colorSemaforo = limpiarTexto(colorSemaforo, 20);
         if (descripcionPersonal !== undefined) datosActualizados.descripcionPersonal = limpiarTexto(descripcionPersonal, 400);
         if (pais !== undefined) {
-            if (!validarPaisCodigo(pais)) {
+            if (!esPerfilPrivilegiado && !validarPaisCodigo(pais)) {
                 return res.status(400).json({ error: 'Debes seleccionar un país válido de la lista.' });
             }
             datosActualizados.pais = String(pais).toUpperCase();
         }
         if (direccionResidencia !== undefined) {
-            const direccionNormalizada = normalizarDireccionSeleccionada(direccionResidencia);
+            const direccionNormalizada = normalizarDireccionSeleccionada(direccionResidencia, pais || req.authUser?.pais || '');
             if (!direccionNormalizada) {
-                return res.status(400).json({ error: 'Debes seleccionar una dirección válida desde las sugerencias.' });
+                if (!(esPerfilPrivilegiado && !direccionResidencia)) {
+                    return res.status(400).json({ error: 'Debes seleccionar una dirección válida desde las sugerencias.' });
+                }
+            } else {
+                datosActualizados.direccionResidencia = direccionNormalizada;
+                datosActualizados.localidad = direccionNormalizada.displayName;
+                datosActualizados.nacionalidad = direccionNormalizada.countryName || datosActualizados.nacionalidad || '';
             }
-            datosActualizados.direccionResidencia = direccionNormalizada;
-            datosActualizados.localidad = direccionNormalizada.displayName;
-            datosActualizados.nacionalidad = direccionNormalizada.countryName || datosActualizados.nacionalidad || '';
         }
         if (preferenciasPlanes !== undefined) {
-            datosActualizados.preferenciasPlanes = normalizarListaOpciones(preferenciasPlanes, PLAN_PREFERENCIAS_PERMITIDAS);
+            if (!(esPerfilPrivilegiado && (preferenciasPlanes === '' || preferenciasPlanes === null))) {
+                datosActualizados.preferenciasPlanes = normalizarListaOpciones(preferenciasPlanes, PLAN_PREFERENCIAS_PERMITIDAS);
+            }
         }
         if (tipoUsuario) {
             if (!adminValido && !esMismoUsuario) return res.status(403).json({ error: 'No autorizado para cambiar tipo de usuario.' });
             datosActualizados.tipoUsuario = tipoUsuario;
-            if (tipoUsuario === 'PROMOTOR' && verificacionPromotor === undefined && !adminValido) {
+            if (tipoUsuario === 'PROMOTOR' && verificacionPromotor === undefined && !esPerfilPrivilegiado && !adminValido) {
                 return res.status(400).json({ error: 'Debes completar la verificación para activar cuenta promotor.' });
             }
         }
@@ -1881,7 +1892,7 @@ app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async 
             verificacionPromotorSanitizada = typeof verificacionPromotor === 'string'
                 ? JSON.parse(verificacionPromotor)
                 : verificacionPromotor;
-            if ((tipoUsuario === 'PROMOTOR' || datosActualizados.tipoUsuario === 'PROMOTOR') && !verificacionPromotorCompleta(verificacionPromotorSanitizada || {})) {
+            if (!esPerfilPrivilegiado && (tipoUsuario === 'PROMOTOR' || datosActualizados.tipoUsuario === 'PROMOTOR') && !verificacionPromotorCompleta(verificacionPromotorSanitizada || {})) {
                 return res.status(400).json({ error: 'Para activar perfil promotor debes completar la verificación.' });
             }
             datosActualizados.verificacionPromotor = {

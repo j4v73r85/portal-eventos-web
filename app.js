@@ -269,6 +269,10 @@ function esModerador() {
     return usuarioConectado.esModerador === true;
 }
 
+function esPerfilPrivilegiadoSinRestricciones() {
+    return esSuperAdmin() || esModerador();
+}
+
 function puedeGestionarEventos() {
     return esSuperAdmin() || esModerador();
 }
@@ -1485,6 +1489,9 @@ function abrirModalEditarPerfil() {
     const hiddenDireccionPerfil = document.getElementById('perfilDireccionResidencia');
     if (inputDireccionPerfil) inputDireccionPerfil.value = perfilDireccion.displayName || '';
     if (hiddenDireccionPerfil && perfilDireccion.displayName) hiddenDireccionPerfil.value = JSON.stringify(perfilDireccion);
+    const perfilPais = document.getElementById('perfilPais');
+    if (perfilPais) perfilPais.required = !esPerfilPrivilegiadoSinRestricciones();
+    if (inputDireccionPerfil) inputDireccionPerfil.required = !esPerfilPrivilegiadoSinRestricciones();
     const perfilSolicitud = document.getElementById('perfilSolicitudPromotor');
     if (usuarioConectado.tipoUsuario === 'PROMOTOR') {
         perfilSolicitud.style.display = 'block';
@@ -1522,21 +1529,22 @@ async function handleFormEditarPerfil(e) {
     const verificacionPromotor = obtenerVerificacionPromotorDesdeFormulario('perfil');
     const fileInput = document.getElementById('inputFotoPerfil');
     const quiereSerPromotor = tipoUsuario === 'PROMOTOR';
+    const esPrivilegiado = esPerfilPrivilegiadoSinRestricciones();
 
-    if (!pais) {
+    if (!esPrivilegiado && !pais) {
         alert('Debes seleccionar tu país de residencia.');
         return;
     }
-    if (!direccionResidencia) {
+    if (!esPrivilegiado && !direccionResidencia) {
         alert('Debes seleccionar una dirección válida desde las sugerencias.');
         return;
     }
-    if (preferenciasPlanes.length === 0) {
+    if (!esPrivilegiado && preferenciasPlanes.length === 0) {
         alert('Selecciona al menos una preferencia de planes.');
         return;
     }
 
-    if (quiereSerPromotor && !verificacionPromotorCompleta(verificacionPromotor)) {
+    if (!esPrivilegiado && quiereSerPromotor && !verificacionPromotorCompleta(verificacionPromotor)) {
         alert('Para activar perfil de promotor debes completar todos los datos de verificación y confirmar la declaración de veracidad.');
         return;
     }
@@ -1545,9 +1553,9 @@ async function handleFormEditarPerfil(e) {
     formData.append('colorSemaforo', colorSemaforo);
     formData.append('descripcionPersonal', descripcion);
     formData.append('tipoUsuario', tipoUsuario);
-    formData.append('pais', pais);
-    formData.append('direccionResidencia', JSON.stringify(direccionResidencia));
-    formData.append('preferenciasPlanes', JSON.stringify(preferenciasPlanes));
+    if (pais) formData.append('pais', pais);
+    if (direccionResidencia) formData.append('direccionResidencia', JSON.stringify(direccionResidencia));
+    if (preferenciasPlanes.length > 0) formData.append('preferenciasPlanes', JSON.stringify(preferenciasPlanes));
     if (quiereSerPromotor) {
         formData.append('solicitudPromotor', solicitudPromotor);
         formData.append('verificacionPromotor', JSON.stringify(verificacionPromotor));

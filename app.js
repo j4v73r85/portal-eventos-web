@@ -97,6 +97,104 @@ function escaparHtml(valor = '') {
         .replace(/'/g, '&#39;');
 }
 
+function obtenerSemaforoNormalizado(colorSemaforo = '') {
+    const valor = String(colorSemaforo || '').toUpperCase();
+    if (valor === 'VERDE' || valor === 'ROJO') return valor;
+    return 'AMARILLO';
+}
+
+function obtenerClaseAvatarSemaforo(colorSemaforo = '') {
+    const estado = obtenerSemaforoNormalizado(colorSemaforo);
+    if (estado === 'VERDE') return 'avatar-status-verde';
+    if (estado === 'ROJO') return 'avatar-status-rojo';
+    return 'avatar-status-amarillo';
+}
+
+function colorAvatarSemaforo(colorSemaforo = '') {
+    const estado = obtenerSemaforoNormalizado(colorSemaforo);
+    if (estado === 'VERDE') return ['#059669', '#10b981'];
+    if (estado === 'ROJO') return ['#dc2626', '#ef4444'];
+    return ['#d97706', '#f59e0b'];
+}
+
+function generarAvatarIniciales(nombre = 'Usuario', colorSemaforo = 'AMARILLO') {
+    const limpio = String(nombre || 'Usuario').trim();
+    const partes = limpio.split(/\s+/).filter(Boolean);
+    const iniciales = ((partes[0]?.[0] || 'U') + (partes[1]?.[0] || '')).toUpperCase().slice(0, 2);
+    const [c1, c2] = colorAvatarSemaforo(colorSemaforo);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g)"/><circle cx="60" cy="40" r="18" fill="rgba(255,255,255,0.22)"/><path d="M26 98c5-19 20-30 34-30s29 11 34 30" fill="rgba(255,255,255,0.22)"/><text x="60" y="74" text-anchor="middle" font-family="Poppins,Segoe UI,sans-serif" font-size="34" font-weight="700" fill="#ffffff">${iniciales}</text></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function obtenerFotoPerfil(usuario = {}) {
+    if (usuario && Array.isArray(usuario.fotos) && usuario.fotos[0]) {
+        return usuario.fotos[0];
+    }
+    return generarAvatarIniciales(usuario?.nombre || 'Usuario', usuario?.colorSemaforo || 'AMARILLO');
+}
+
+function asegurarAvatarCabeceraPerfil() {
+    const nombreEl = document.getElementById('lblNombreUsuario');
+    let fotoCabecera = document.getElementById('lblFotoPerfilUsuario');
+
+    if (nombreEl && nombreEl.parentElement) {
+        const identidad = nombreEl.parentElement;
+        identidad.classList.add('hero-profile-identidad');
+
+        // Limpia iconos emoji antiguos en nodos de texto heredados de caché.
+        Array.from(identidad.childNodes).forEach((node) => {
+            if (node.nodeType === Node.TEXT_NODE && /👤/.test(node.textContent || '')) {
+                identidad.removeChild(node);
+            }
+        });
+        Array.from(identidad.children).forEach((el) => {
+            if (
+                el.id !== 'lblFotoPerfilUsuario' &&
+                el.id !== 'lblNombreUsuario' &&
+                el.id !== 'lblSemaforo' &&
+                el.id !== 'lblPromotorStatus' &&
+                /👤/.test(el.textContent || '')
+            ) {
+                el.remove();
+            }
+        });
+
+        if (!fotoCabecera) {
+            fotoCabecera = document.createElement('img');
+            fotoCabecera.id = 'lblFotoPerfilUsuario';
+            fotoCabecera.className = 'hero-profile-avatar';
+            fotoCabecera.alt = 'Foto de perfil';
+            fotoCabecera.style.cssText = 'width:54px;height:54px;border-radius:50%;object-fit:cover;border:3px solid rgba(245,158,11,0.95);';
+            identidad.insertBefore(fotoCabecera, nombreEl);
+        }
+    }
+
+    const btnPerfilMenu = document.getElementById('btnPerfilMenu');
+    let fotoBotonPerfil = document.getElementById('btnPerfilAvatar');
+    if (btnPerfilMenu) {
+        const spanLabel = btnPerfilMenu.querySelector('span');
+        if (spanLabel && /👤/.test(spanLabel.textContent || '')) {
+            spanLabel.textContent = 'Mi perfil ▾';
+        }
+        Array.from(btnPerfilMenu.childNodes).forEach((node) => {
+            if (node.nodeType === Node.TEXT_NODE && /👤/.test(node.textContent || '')) {
+                btnPerfilMenu.removeChild(node);
+            }
+        });
+
+        if (!fotoBotonPerfil) {
+            fotoBotonPerfil = document.createElement('img');
+            fotoBotonPerfil.id = 'btnPerfilAvatar';
+            fotoBotonPerfil.className = 'btn-perfil-avatar';
+            fotoBotonPerfil.alt = 'Foto de perfil';
+            fotoBotonPerfil.style.cssText = 'width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid rgba(245,158,11,0.9);';
+            btnPerfilMenu.insertBefore(fotoBotonPerfil, btnPerfilMenu.firstChild);
+        }
+    }
+
+    return { fotoCabecera, fotoBotonPerfil };
+}
+
 function actualizarBadgeNotificacionesSociales() {
     const badge = document.getElementById('btnPerfilMenuBadge');
     if (!badge) return;
@@ -1037,10 +1135,11 @@ function renderizarSeccionSocial() {
         : muro.map((item) => {
             const avatar = item.actorFotos && item.actorFotos[0] ? item.actorFotos[0] : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120';
             const pillClass = item.tipo === 'evento' ? 'social-pill-evento' : item.tipo === 'amistad' ? 'social-pill-amistad' : 'social-pill-seguir';
+            const avatarClass = obtenerClaseAvatarSemaforo(item.actorColorSemaforo || 'AMARILLO');
             return `
                 <article class="social-story-card">
                     <div class="social-story-top">
-                        <img src="${escaparHtml(avatar)}" alt="${escaparHtml(item.actorNombre)}" class="social-story-avatar">
+                        <img src="${escaparHtml(avatar)}" alt="${escaparHtml(item.actorNombre)}" class="social-story-avatar ${avatarClass}">
                         <div>
                             <strong>${escaparHtml(item.actorNombre)}</strong>
                             <p>${escaparHtml(item.esPropia ? 'Tu actividad' : 'Actividad de un amigo')}</p>
@@ -1063,6 +1162,7 @@ function renderizarSeccionSocial() {
             const rel = usuario.relacion || {};
             const estadoEtiqueta = rel.esAmigo ? 'Amigo' : rel.solicitudRecibida ? 'Te pidió amistad' : rel.solicitudEnviada ? 'Solicitud enviada' : rel.sigue ? 'Siguiendo' : 'Disponible';
             const avatar = usuario.fotos && usuario.fotos[0] ? usuario.fotos[0] : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120';
+            const avatarClass = obtenerClaseAvatarSemaforo(usuario.colorSemaforo || 'AMARILLO');
             const acciones = [];
             if (rel.esAmigo) {
                 acciones.push(`<button type="button" onclick="accionRedSocial('${usuario.id}', 'dejar_amigo')">Dejar de ser amigo</button>`);
@@ -1082,7 +1182,7 @@ function renderizarSeccionSocial() {
             return `
                 <article class="social-person-card">
                     <div class="social-person-main">
-                        <img src="${escaparHtml(avatar)}" alt="${escaparHtml(usuario.nombre)}" class="social-person-avatar">
+                        <img src="${escaparHtml(avatar)}" alt="${escaparHtml(usuario.nombre)}" class="social-person-avatar ${avatarClass}">
                         <div>
                             <strong>${escaparHtml(usuario.nombre)}</strong>
                             <p>${escaparHtml(usuario.email || '')}</p>
@@ -1845,11 +1945,30 @@ function gestionarIUUsuario() {
     document.getElementById('bannerRegistroPromocional').style.display = 'none';
     document.getElementById('perfilUsuarioBox').style.display = 'block';
     document.getElementById('lblNombreUsuario').innerText = usuarioConectado.nombre;
+    const fotoPerfil = obtenerFotoPerfil(usuarioConectado);
+    const claseAvatar = obtenerClaseAvatarSemaforo(usuarioConectado.colorSemaforo || 'AMARILLO');
+    const { fotoCabecera, fotoBotonPerfil } = asegurarAvatarCabeceraPerfil();
+    if (fotoCabecera) {
+        fotoCabecera.src = fotoPerfil;
+        fotoCabecera.classList.remove('avatar-status-verde', 'avatar-status-amarillo', 'avatar-status-rojo');
+        fotoCabecera.classList.add(claseAvatar);
+        fotoCabecera.onerror = () => {
+            fotoCabecera.src = generarAvatarIniciales(usuarioConectado.nombre || 'Usuario', usuarioConectado.colorSemaforo || 'AMARILLO');
+        };
+    }
+    if (fotoBotonPerfil) {
+        fotoBotonPerfil.src = fotoPerfil;
+        fotoBotonPerfil.classList.remove('avatar-status-verde', 'avatar-status-amarillo', 'avatar-status-rojo');
+        fotoBotonPerfil.classList.add(claseAvatar);
+        fotoBotonPerfil.onerror = () => {
+            fotoBotonPerfil.src = generarAvatarIniciales(usuarioConectado.nombre || 'Usuario', usuarioConectado.colorSemaforo || 'AMARILLO');
+        };
+    }
     const sem = document.getElementById('lblSemaforo');
-    sem.innerText = usuarioConectado.colorSemaforo || 'AMARILLO';
-    if (usuarioConectado.colorSemaforo === 'VERDE') { sem.style.background = '#10b981'; sem.style.color = 'white'; }
-    else if (usuarioConectado.colorSemaforo === 'ROJO') { sem.style.background = '#ef4444'; sem.style.color = 'white'; }
-    else { sem.style.background = '#f59e0b'; sem.style.color = 'black'; }
+    if (sem) {
+        sem.style.display = 'none';
+        sem.textContent = '';
+    }
 
     const promotorStatus = document.getElementById('lblPromotorStatus');
     const btnContactoVerificacion = document.getElementById('btnContactarVerificacionPromotor');
@@ -2330,14 +2449,17 @@ function crearMensajeChatElement(idEvento, mensaje) {
 
     const avatar = document.createElement('img');
     avatar.className = 'chat-message-avatar';
-    avatar.src = esPropio
-        ? (usuarioConectado.fotos && usuarioConectado.fotos[0] ? usuarioConectado.fotos[0] : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100')
-        : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100';
+    const autorFoto = mensaje.autorFoto || (esPropio
+        ? obtenerFotoPerfil(usuarioConectado)
+        : generarAvatarIniciales(mensaje.autor || 'Usuario', mensaje.colorSemaforo || 'AMARILLO'));
+    const autorSemaforo = mensaje.colorSemaforo || (esPropio ? obtenerSemaforoNormalizado(usuarioConectado.colorSemaforo) : 'AMARILLO');
+    avatar.src = autorFoto;
+    avatar.classList.add(obtenerClaseAvatarSemaforo(autorSemaforo));
     avatar.alt = mensaje.autor || 'Avatar';
 
     const bubble = document.createElement('div');
     bubble.className = `chat-message${esPropio ? ' own' : ''}`;
-    bubble.innerHTML = `<div class="author">${mensaje.autor || 'Anónimo'}</div><div class="text">${mensaje.texto}</div>`;
+    bubble.innerHTML = `<div class="text"><span class="author-inline">${mensaje.autor || 'Anónimo'}:</span>${mensaje.texto}</div>`;
 
     wrapper.appendChild(avatar);
     wrapper.appendChild(bubble);

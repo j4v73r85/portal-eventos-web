@@ -15,6 +15,7 @@ Antes de empezar
 	- JWT_SECRET (secreto largo y aleatorio para firmar sesiones)
 	- CORS_ORIGINS (dominios permitidos, separados por coma)
 	- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM (envio de codigos OTP)
+	- CLOUDINARY_URL o CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET (fotos de perfil remotas)
 
 Paso 1. Subir proyecto a GitHub (si aun no esta)
 1. Crea un repositorio nuevo en GitHub.
@@ -49,6 +50,9 @@ Paso 3. Desplegar en Render
 	- SMTP_FROM = remitente no-reply@tudominio
 	- ALLOW_CONSOLE_OTP = false (obligatorio en produccion)
 	- CORS_ORIGINS = la URL publica de Render, por ejemplo https://plandem-portal-eventos.onrender.com
+	- CLOUDINARY_URL = cadena cloudinary://... (opcion recomendada)
+	- CLOUDINARY_FOLDER = plandem/perfiles
+	- CLOUDINARY_PROFILE_STORAGE_REQUIRED = true
 5. Inicia el deploy.
 
 Paso 4. Verificar que arranco bien
@@ -85,5 +89,5 @@ Checklist final rapido
 
 Notas importantes
 1. La carpeta uploads no es persistente en Render free.
-2. Si redeployas, los archivos subidos pueden perderse.
-3. Siguiente mejora recomendada: mover imagenes/videos a Cloudinary o S3.
+2. Las fotos de perfil ahora se suben a Cloudinary si configuras sus variables de entorno.
+3. Si no configuras Cloudinary y CLOUDINARY_PROFILE_STORAGE_REQUIRED=true, la subida de foto de perfil fallará para evitar almacenamiento local no persistente.

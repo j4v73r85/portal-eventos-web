@@ -5,11 +5,13 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const { v2: cloudinary } = require('cloudinary');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +31,15 @@ const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER || 'no-reply@plandem.es';
 const ALLOW_CONSOLE_OTP = process.env.ALLOW_CONSOLE_OTP === 'true' || process.env.NODE_ENV !== 'production';
+const CLOUDINARY_URL = process.env.CLOUDINARY_URL || '';
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || '';
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '';
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || '';
+const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || 'plandem/perfiles';
+const CLOUDINARY_PROFILE_STORAGE_REQUIRED = process.env.CLOUDINARY_PROFILE_STORAGE_REQUIRED !== 'false';
+const CLOUDINARY_CONFIGURADO = Boolean(
+    CLOUDINARY_URL || (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET)
+);
 const PLAN_PREFERENCIAS_PERMITIDAS = [
     'Musica en vivo',
     'Festivales',
@@ -85,6 +96,22 @@ if (!SUPERADMIN_PASSWORD) {
 if (OTP_EMAIL_ENABLED && !SMTP_HOST) {
     console.warn('⚠️ OTP_EMAIL_ENABLED activo sin SMTP_HOST. Configura SMTP para verificación por email.');
 }
+if (!CLOUDINARY_CONFIGURADO) {
+    console.warn('⚠️ Cloudinary no configurado. Las fotos de perfil no se persistirán en almacenamiento remoto.');
+}
+
+if (CLOUDINARY_CONFIGURADO) {
+    if (CLOUDINARY_URL) {
+        cloudinary.config(CLOUDINARY_URL);
+    } else {
+        cloudinary.config({
+            cloud_name: CLOUDINARY_CLOUD_NAME,
+            api_key: CLOUDINARY_API_KEY,
+            api_secret: CLOUDINARY_API_SECRET,
+            secure: true
+        });
+    }
+}
 
 app.use(helmet({
     crossOriginResourcePolicy: false,
@@ -105,12 +132,14 @@ app.use(helmet({
                 'data:',
                 'blob:',
                 'https://images.unsplash.com',
+                'https://res.cloudinary.com',
                 'https://*.tile.openstreetmap.org',
                 'https://*.basemaps.cartocdn.com',
                 'https://unpkg.com'
             ],
             connectSrc: [
                 "'self'",
+                'https://api.cloudinary.com',
                 'https://nominatim.openstreetmap.org',
                 'https://*.tile.openstreetmap.org',
                 'https://*.basemaps.cartocdn.com'
@@ -132,8 +161,26 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 
-app.use(express.static(__dirname));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(express.static(__dirname, {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.setHeader('Surrogate-Control', 'no-store');
+    }
+}));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.setHeader('Surrogate-Control', 'no-store');
+    }
+}));
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
@@ -261,6 +308,25 @@ function normalizarDireccionSeleccionada(direccion, paisFallback = '') {
         countryCode,
         countryName
     };
+}
+
+async function subirFotoPerfilRemota(rutaArchivo, usuarioId) {
+    if (!CLOUDINARY_CONFIGURADO) {
+        throw new Error('Cloudinary no configurado para almacenamiento remoto de fotos de perfil.');
+    }
+    const upload = await cloudinary.uploader.upload(rutaArchivo, {
+        folder: CLOUDINARY_FOLDER,
+        resource_type: 'image',
+        public_id: `perfil-${usuarioId}-${Date.now()}`,
+        overwrite: true,
+        invalidate: true,
+        transformation: [
+            { width: 1080, height: 1080, crop: 'limit' },
+            { fetch_format: 'auto' },
+            { quality: 'auto:good' }
+        ]
+    });
+    return upload.secure_url;
 }
 
 function normalizarUbicacionEvento(ubicacion) {
@@ -499,6 +565,8 @@ const EventoSchema = new mongoose.Schema({
     chatMessages: [{
         autor: { type: String, default: 'Anónimo' },
         usuarioId: { type: String },
+        autorFoto: { type: String, default: '' },
+        colorSemaforo: { type: String, enum: ['VERDE', 'AMARILLO', 'ROJO'], default: 'AMARILLO' },
         texto: { type: String, required: true },
         creado: { type: Date, default: Date.now }
     }],
@@ -795,23 +863,60 @@ function buscarModeracionUsuario(lista = [], usuarioId) {
     return lista.find((item) => String(item.usuarioId) === String(usuarioId)) || null;
 }
 
-function serializarMensajesChat(chatMessages = []) {
+function generarAvatarInicialesServidor(nombre = 'Usuario', colorSemaforo = 'AMARILLO') {
+    const limpio = String(nombre || 'Usuario').trim();
+    const partes = limpio.split(/\s+/).filter(Boolean);
+    const iniciales = ((partes[0]?.[0] || 'U') + (partes[1]?.[0] || '')).toUpperCase().slice(0, 2);
+    const estado = String(colorSemaforo || 'AMARILLO').toUpperCase();
+    const colores = estado === 'VERDE'
+        ? ['#059669', '#10b981']
+        : estado === 'ROJO'
+            ? ['#dc2626', '#ef4444']
+            : ['#d97706', '#f59e0b'];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${colores[0]}"/><stop offset="100%" stop-color="${colores[1]}"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g)"/><circle cx="60" cy="40" r="18" fill="rgba(255,255,255,0.22)"/><path d="M26 98c5-19 20-30 34-30s29 11 34 30" fill="rgba(255,255,255,0.22)"/><text x="60" y="74" text-anchor="middle" font-family="Segoe UI,sans-serif" font-size="34" font-weight="700" fill="#ffffff">${iniciales}</text></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+async function obtenerPerfilesAutoresChat(chatMessages = []) {
+    const ids = Array.from(new Set(
+        (chatMessages || [])
+            .map((mensaje) => String(mensaje.usuarioId || ''))
+            .filter((id) => id && mongoose.Types.ObjectId.isValid(id))
+    ));
+    if (ids.length === 0) return new Map();
+    const usuarios = await Usuario.find({ _id: { $in: ids } })
+        .select('fotos colorSemaforo')
+        .lean();
+    const perfiles = new Map();
+    usuarios.forEach((usuario) => {
+        perfiles.set(String(usuario._id), {
+            autorFoto: Array.isArray(usuario.fotos) && usuario.fotos[0] ? usuario.fotos[0] : '',
+            colorSemaforo: usuario.colorSemaforo || 'AMARILLO'
+        });
+    });
+    return perfiles;
+}
+
+function serializarMensajesChat(chatMessages = [], perfilesAutores = new Map()) {
     return chatMessages.map((mensaje) => ({
         _id: mensaje._id,
         autor: mensaje.autor || 'Anónimo',
         usuarioId: mensaje.usuarioId || '',
+        autorFoto: perfilesAutores.get(String(mensaje.usuarioId || ''))?.autorFoto || mensaje.autorFoto || generarAvatarInicialesServidor(mensaje.autor || 'Usuario', mensaje.colorSemaforo || 'AMARILLO'),
+        colorSemaforo: perfilesAutores.get(String(mensaje.usuarioId || ''))?.colorSemaforo || mensaje.colorSemaforo || 'AMARILLO',
         texto: mensaje.texto || '',
         creado: mensaje.creado || null
     }));
 }
 
-function construirRespuestaChat(evento, viewerId, esAdmin) {
+async function construirRespuestaChat(evento, viewerId, esAdmin) {
     const moderacion = normalizarModeracionChat(evento.chatModeration);
     const usuarioMuteado = viewerId ? buscarModeracionUsuario(moderacion.muteados, viewerId) : null;
     const usuarioExpulsado = viewerId ? buscarModeracionUsuario(moderacion.expulsados, viewerId) : null;
     const avisosUsuario = viewerId ? moderacion.avisados.filter((item) => String(item.usuarioId) === String(viewerId)) : [];
+    const perfilesAutores = await obtenerPerfilesAutoresChat(evento.chatMessages || []);
     return {
-        messages: serializarMensajesChat(evento.chatMessages || []),
+        messages: serializarMensajesChat(evento.chatMessages || [], perfilesAutores),
         moderation: {
             bloqueado: moderacion.bloqueado,
             puedeModerar: esAdmin,
@@ -1700,7 +1805,7 @@ app.get('/api/eventos/:id/chat', async (req, res) => {
         if (!adminValido && viewerId && buscarModeracionUsuario(moderacion.expulsados, viewerId)) {
             return res.status(403).json({ error: 'Has sido expulsado de este chat por moderación.' });
         }
-        res.json(construirRespuestaChat(evento, viewerId, !!adminValido));
+        res.json(await construirRespuestaChat(evento, viewerId, !!adminValido));
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -1738,7 +1843,7 @@ app.post('/api/eventos/:id/chat', requerirSesion, async (req, res) => {
         );
 
         if (!evento) return res.status(404).json({ error: 'Evento no encontrado.' });
-        res.json({ success: true, mensaje: 'Mensaje guardado correctamente.', ...construirRespuestaChat(evento, usuarioId, !!adminValido) });
+        res.json({ success: true, mensaje: 'Mensaje guardado correctamente.', ...(await construirRespuestaChat(evento, usuarioId, !!adminValido)) });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -1805,7 +1910,7 @@ app.post('/api/eventos/:id/chat/moderacion', requerirSesion, async (req, res) =>
         evento.chatModeration = moderacion;
         await evento.save();
 
-        res.json({ success: true, mensaje: 'Moderación aplicada correctamente.', ...construirRespuestaChat(evento, adminValido._id, true) });
+        res.json({ success: true, mensaje: 'Moderación aplicada correctamente.', ...(await construirRespuestaChat(evento, adminValido._id, true)) });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
@@ -1917,8 +2022,20 @@ app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async 
         }
         
         if (req.file) {
-            const fotoUrl = `/uploads/${req.file.filename}`;
-            datosActualizados.fotos = [fotoUrl];
+            try {
+                const fotoUrl = await subirFotoPerfilRemota(req.file.path, id);
+                datosActualizados.fotos = [fotoUrl];
+            } catch (errorSubida) {
+                if (CLOUDINARY_PROFILE_STORAGE_REQUIRED) {
+                    return res.status(500).json({
+                        error: 'No se pudo guardar la foto en almacenamiento remoto. Revisa la configuración de Cloudinary.'
+                    });
+                }
+                const fotoUrlLocal = `/uploads/${req.file.filename}`;
+                datosActualizados.fotos = [fotoUrlLocal];
+            } finally {
+                fs.promises.unlink(req.file.path).catch(() => {});
+            }
         }
 
         const usuarioActualizado = await Usuario.findByIdAndUpdate(id, datosActualizados, { new: true });

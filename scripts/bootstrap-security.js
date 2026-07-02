@@ -42,7 +42,13 @@ const generated = {
   SMTP_PASS: '',
   SMTP_FROM: 'no-reply@plandem.es',
   ALLOW_CONSOLE_OTP: 'true',
-  CORS_ORIGINS: 'http://localhost:3000,http://127.0.0.1:3000'
+  CORS_ORIGINS: 'http://localhost:3000,http://127.0.0.1:3000',
+  CLOUDINARY_URL: '',
+  CLOUDINARY_CLOUD_NAME: '',
+  CLOUDINARY_API_KEY: '',
+  CLOUDINARY_API_SECRET: '',
+  CLOUDINARY_FOLDER: 'plandem/perfiles',
+  CLOUDINARY_PROFILE_STORAGE_REQUIRED: 'true'
 };
 
 const lines = Object.entries(generated).map(([k, v]) => `${k}=${v}`);

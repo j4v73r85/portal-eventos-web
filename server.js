@@ -86,7 +86,36 @@ if (OTP_EMAIL_ENABLED && !SMTP_HOST) {
     console.warn('⚠️ OTP_EMAIL_ENABLED activo sin SMTP_HOST. Configura SMTP para verificación por email.');
 }
 
-app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(helmet({
+    crossOriginResourcePolicy: false,
+    contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", 'https://unpkg.com'],
+            styleSrc: ["'self'", "'unsafe-inline'", 'https://unpkg.com'],
+            imgSrc: [
+                "'self'",
+                'data:',
+                'blob:',
+                'https://images.unsplash.com',
+                'https://*.tile.openstreetmap.org',
+                'https://*.basemaps.cartocdn.com',
+                'https://unpkg.com'
+            ],
+            connectSrc: [
+                "'self'",
+                'https://nominatim.openstreetmap.org',
+                'https://*.tile.openstreetmap.org',
+                'https://*.basemaps.cartocdn.com'
+            ],
+            fontSrc: ["'self'", 'data:', 'https:'],
+            mediaSrc: ["'self'", 'data:', 'blob:'],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'self'"]
+        }
+    }
+}));
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin || CORS_ORIGINS.length === 0 || CORS_ORIGINS.includes(origin)) {

@@ -1777,7 +1777,7 @@ app.post('/api/eventos/:id/chat/moderacion', requerirSesion, async (req, res) =>
 app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async (req, res) => {
     try {
         const { id } = req.params;
-        const { colorSemaforo, descripcionPersonal, tipoUsuario, solicitudPromotor, promotorAprobado, verificacionPromotor, esAdmin, pais, direccionResidencia, preferenciasPlanes } = req.body;
+        const { colorSemaforo, descripcionPersonal, tipoUsuario, solicitudPromotor, promotorAprobado, verificacionPromotor, esAdmin, esModerador, pais, direccionResidencia, preferenciasPlanes } = req.body;
 
         const requesterId = req.authUser._id;
         const esMismoUsuario = requesterId && requesterId.toString() === id.toString();
@@ -1832,6 +1832,15 @@ app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async 
                 datosActualizados.esAdmin = false;
             }
         }
+        if (esModerador !== undefined) {
+            if (!adminValido) return res.status(403).json({ error: 'Solo el superadmin puede editar privilegios de moderador.' });
+            const targetIsSuperadminEmail = esSuperadminEmail(usuarioObjetivo.email);
+            if (targetIsSuperadminEmail) {
+                datosActualizados.esModerador = false;
+            } else {
+                datosActualizados.esModerador = esModerador === true || esModerador === 'true';
+            }
+        }
         let verificacionPromotorSanitizada = null;
         if (verificacionPromotor !== undefined) {
             verificacionPromotorSanitizada = typeof verificacionPromotor === 'string'
@@ -1856,6 +1865,7 @@ app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async 
         }
         if (esSuperadminEmail(usuarioObjetivo.email)) {
             datosActualizados.esAdmin = true;
+            datosActualizados.esModerador = false;
             datosActualizados.tipoUsuario = 'PROMOTOR';
             datosActualizados.promotorAprobado = true;
         }

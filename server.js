@@ -94,7 +94,12 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             scriptSrc: ["'self'", "'unsafe-inline'", 'https://unpkg.com'],
             scriptSrcAttr: ["'unsafe-inline'"],
-            styleSrc: ["'self'", "'unsafe-inline'", 'https://unpkg.com'],
+            styleSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                'https://unpkg.com',
+                'https://fonts.googleapis.com'
+            ],
             imgSrc: [
                 "'self'",
                 'data:',
@@ -110,7 +115,7 @@ app.use(helmet({
                 'https://*.tile.openstreetmap.org',
                 'https://*.basemaps.cartocdn.com'
             ],
-            fontSrc: ["'self'", 'data:', 'https:'],
+            fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com', 'https:'],
             mediaSrc: ["'self'", 'data:', 'blob:'],
             objectSrc: ["'none'"],
             frameAncestors: ["'self'"]

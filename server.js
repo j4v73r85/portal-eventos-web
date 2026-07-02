@@ -5,14 +5,97 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
+const crypto = require('crypto');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plandem';
 const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || 'jmv1985jmv@gmail.com').toLowerCase();
-const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD || 'Plandem?2026?Plandem?';
-app.use(cors());
-app.use(express.json());
+const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD;
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(48).toString('hex');
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map((item) => item.trim()).filter(Boolean);
+const OTP_EMAIL_ENABLED = process.env.OTP_EMAIL_ENABLED !== 'false';
+const OTP_EXP_MINUTES = Number(process.env.OTP_EXP_MINUTES || 10);
+const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);
+const SMTP_HOST = process.env.SMTP_HOST || '';
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = process.env.SMTP_SECURE === 'true';
+const SMTP_USER = process.env.SMTP_USER || '';
+const SMTP_PASS = process.env.SMTP_PASS || '';
+const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER || 'no-reply@plandem.es';
+const ALLOW_CONSOLE_OTP = process.env.ALLOW_CONSOLE_OTP === 'true' || process.env.NODE_ENV !== 'production';
+const PLAN_PREFERENCIAS_PERMITIDAS = [
+    'Musica en vivo',
+    'Festivales',
+    'Gastronomia',
+    'Deporte',
+    'Cultura',
+    'Ocio nocturno',
+    'Aire libre',
+    'Familia',
+    'Bienestar',
+    'Tecnologia',
+    'Arte y talleres',
+    'Viajes',
+    'Networking',
+    'Eventos premium'
+];
+const PAISES_PERMITIDOS = new Set([
+    'ES', 'PT', 'FR', 'IT', 'AD', 'DE', 'GB', 'IE', 'NL', 'BE', 'CH', 'AT', 'SE', 'NO', 'DK',
+    'US', 'CA', 'MX', 'AR', 'CO', 'PE', 'CL', 'UY', 'EC', 'BO', 'CR', 'PA', 'PR', 'VE', 'DO',
+    'GT', 'SV', 'HN', 'NI', 'PY', 'BR', 'AU', 'NZ'
+]);
+
+function validarConfiguracionProduccion() {
+    const isProd = process.env.NODE_ENV === 'production';
+    if (!isProd) return;
+
+    const faltantes = [];
+    if (!process.env.MONGODB_URI) faltantes.push('MONGODB_URI');
+    if (!process.env.SUPERADMIN_EMAIL) faltantes.push('SUPERADMIN_EMAIL');
+    if (!process.env.SUPERADMIN_PASSWORD) faltantes.push('SUPERADMIN_PASSWORD');
+    if (!process.env.JWT_SECRET) faltantes.push('JWT_SECRET');
+    if (!process.env.CORS_ORIGINS) faltantes.push('CORS_ORIGINS');
+
+    if (OTP_EMAIL_ENABLED && !ALLOW_CONSOLE_OTP) {
+        if (!SMTP_HOST) faltantes.push('SMTP_HOST');
+        if (!SMTP_USER) faltantes.push('SMTP_USER');
+        if (!SMTP_PASS) faltantes.push('SMTP_PASS');
+        if (!SMTP_FROM) faltantes.push('SMTP_FROM');
+    }
+
+    if (faltantes.length > 0) {
+        throw new Error(`Configuracion insegura en produccion. Faltan variables: ${faltantes.join(', ')}`);
+    }
+}
+
+validarConfiguracionProduccion();
+
+if (!process.env.JWT_SECRET) {
+    console.warn('⚠️ JWT_SECRET no configurado. Se usa un secreto temporal para esta ejecución (las sesiones caducan al reiniciar).');
+}
+if (!SUPERADMIN_PASSWORD) {
+    console.warn('⚠️ SUPERADMIN_PASSWORD no configurado. No se forzará contraseña por defecto del superadmin.');
+}
+if (OTP_EMAIL_ENABLED && !SMTP_HOST) {
+    console.warn('⚠️ OTP_EMAIL_ENABLED activo sin SMTP_HOST. Configura SMTP para verificación por email.');
+}
+
+app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || CORS_ORIGINS.length === 0 || CORS_ORIGINS.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Origen no permitido por CORS'));
+    }
+}));
+app.use(express.json({ limit: '1mb' }));
 
 app.use(express.static(__dirname));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -21,7 +104,342 @@ const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
-const upload = multer({ storage });
+const MIME_MEDIA_PERMITIDOS = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'video/mp4',
+    'video/quicktime',
+    'video/webm'
+]);
+const MIME_AUDIO_PERMITIDOS = new Set([
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/mp4',
+    'audio/wav',
+    'audio/webm',
+    'audio/ogg'
+]);
+
+const upload = multer({
+    storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024,
+        files: 11
+    },
+    fileFilter: (req, file, cb) => {
+        if (!MIME_MEDIA_PERMITIDOS.has(file.mimetype)) {
+            return cb(new Error('Tipo de archivo no permitido.'));
+        }
+        cb(null, true);
+    }
+});
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 8,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiados intentos. Inténtalo de nuevo en unos minutos.' }
+});
+
+const registerLimiter = rateLimit({
+    windowMs: 30 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiados registros desde esta IP. Inténtalo más tarde.' }
+});
+
+const otpLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiados intentos de verificación. Espera unos minutos.' }
+});
+
+const smtpConfigurado = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
+const mailTransporter = smtpConfigurado ? nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS
+    }
+}) : null;
+
+function limpiarTexto(valor, maxLen = 200) {
+    if (typeof valor !== 'string') return '';
+    return valor.trim().slice(0, maxLen);
+}
+
+function normalizarListaOpciones(lista = [], permitidas = []) {
+    let listaProcesada = lista;
+    if (typeof listaProcesada === 'string') {
+        try {
+            listaProcesada = JSON.parse(listaProcesada);
+        } catch (error) {
+            listaProcesada = listaProcesada.split(',').map((item) => item.trim()).filter(Boolean);
+        }
+    }
+    const permitidasNormalizadas = new Set(permitidas.map((item) => String(item).toLowerCase()));
+    return Array.from(new Set((Array.isArray(listaProcesada) ? listaProcesada : [])
+        .map((item) => limpiarTexto(String(item), 80))
+        .filter((item) => permitidasNormalizadas.has(item.toLowerCase()))));
+}
+
+function validarPaisCodigo(pais) {
+    return PAISES_PERMITIDOS.has(String(pais || '').toUpperCase());
+}
+
+function normalizarDireccionSeleccionada(direccion) {
+    if (!direccion) return null;
+
+    let parsed = direccion;
+    if (typeof direccion === 'string') {
+        try {
+            parsed = JSON.parse(direccion);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    const latitud = Number(parsed?.latitud);
+    const longitud = Number(parsed?.longitud);
+    const displayName = limpiarTexto(parsed?.displayName || parsed?.display_name || '', 260);
+    const placeId = limpiarTexto(parsed?.placeId || parsed?.place_id || '', 64);
+    const countryCode = limpiarTexto(parsed?.countryCode || parsed?.country_code || '', 4).toUpperCase();
+    const countryName = limpiarTexto(parsed?.countryName || parsed?.country_name || '', 80);
+
+    if (!placeId || !displayName || Number.isNaN(latitud) || Number.isNaN(longitud) || !validarPaisCodigo(countryCode)) {
+        return null;
+    }
+
+    return {
+        placeId,
+        displayName,
+        latitud,
+        longitud,
+        countryCode,
+        countryName
+    };
+}
+
+function normalizarUbicacionEvento(ubicacion) {
+    const direccion = normalizarDireccionSeleccionada(ubicacion);
+    if (!direccion) return null;
+    return {
+        direccion: direccion.displayName,
+        coordenadas: {
+            latitud: direccion.latitud,
+            longitud: direccion.longitud
+        },
+        placeId: direccion.placeId,
+        countryCode: direccion.countryCode,
+        countryName: direccion.countryName
+    };
+}
+
+function scoreEventoPorPreferencias(usuario, evento) {
+    const preferencias = normalizarListaOpciones(usuario?.preferenciasPlanes || [], PLAN_PREFERENCIAS_PERMITIDAS);
+    if (preferencias.length === 0) return 0;
+
+    const textoEvento = `${limpiarTexto(evento?.categoria || '', 80)} ${limpiarTexto(evento?.titulo || '', 120)} ${limpiarTexto(evento?.descripcion || '', 400)}`.toLowerCase();
+    let score = 0;
+
+    preferencias.forEach((preferencia) => {
+        const pref = preferencia.toLowerCase();
+        if (textoEvento.includes(pref)) score += 5;
+
+        const prefSinEspacios = pref.replace(/\s+/g, '');
+        const eventoSinEspacios = textoEvento.replace(/\s+/g, '');
+        if (prefSinEspacios && eventoSinEspacios.includes(prefSinEspacios)) score += 2;
+
+        if ((pref.includes('musica') || pref.includes('música')) && textoEvento.includes('música')) score += 3;
+        if (pref.includes('gastronomia') && (textoEvento.includes('comida') || textoEvento.includes('gastronom'))) score += 3;
+    });
+
+    return score;
+}
+
+function generarCodigoOTP() {
+    const numero = crypto.randomInt(0, 1000000);
+    return String(numero).padStart(6, '0');
+}
+
+function hashOTP(email, codigo) {
+    return crypto
+        .createHash('sha256')
+        .update(`${(email || '').toLowerCase()}::${codigo}::${JWT_SECRET}`)
+        .digest('hex');
+}
+
+function usuarioTieneVerificacionPendiente(usuario) {
+    if (!usuario) return false;
+    if (usuario.emailVerificado === true) return false;
+    const expiraEn = usuario.verificacionEmail?.expiraEn;
+    if (!expiraEn) return false;
+    return new Date(expiraEn).getTime() > Date.now();
+}
+
+async function enviarCodigoVerificacionEmail(destinatario, codigo) {
+    if (!OTP_EMAIL_ENABLED) {
+        return;
+    }
+    if (mailTransporter) {
+        await mailTransporter.sendMail({
+            from: SMTP_FROM,
+            to: destinatario,
+            subject: 'Codigo de verificacion Plandem',
+            text: `Tu codigo de verificacion es: ${codigo}. Caduca en ${OTP_EXP_MINUTES} minutos.`,
+            html: `<p>Tu codigo de verificacion es:</p><p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${codigo}</p><p>Caduca en ${OTP_EXP_MINUTES} minutos.</p>`
+        });
+        return;
+    }
+    if (!ALLOW_CONSOLE_OTP) {
+        throw new Error('Servicio SMTP no configurado para enviar OTP en producción.');
+    }
+    console.warn(`[OTP] SMTP no configurado. Codigo para ${destinatario}: ${codigo}`);
+}
+
+function obtenerIpCliente(req) {
+    const xfwd = req.headers['x-forwarded-for'];
+    if (Array.isArray(xfwd) && xfwd.length > 0) return String(xfwd[0]);
+    if (typeof xfwd === 'string' && xfwd.length > 0) return xfwd.split(',')[0].trim();
+    return req.ip || req.socket?.remoteAddress || '';
+}
+
+function emailValido(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '');
+}
+
+function passwordRobusta(password) {
+    if (typeof password !== 'string') return false;
+    if (password.length < 10 || password.length > 128) return false;
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+    return hasUpper && hasLower && hasNumber && hasSpecial;
+}
+
+function parsearFechaNacimiento(fechaNacimiento) {
+    if (!fechaNacimiento) return null;
+    const fecha = new Date(fechaNacimiento);
+    return Number.isNaN(fecha.getTime()) ? null : fecha;
+}
+
+function esMayorDeEdad(fechaNacimiento, edadMinima = 18) {
+    const fecha = parsearFechaNacimiento(fechaNacimiento);
+    if (!fecha) return false;
+    const hoy = new Date();
+    let edad = hoy.getFullYear() - fecha.getFullYear();
+    const mes = hoy.getMonth() - fecha.getMonth();
+    if (mes < 0 || (mes === 0 && hoy.getDate() < fecha.getDate())) {
+        edad -= 1;
+    }
+    return edad >= edadMinima;
+}
+
+function verificacionPromotorCompleta(verificacion = {}) {
+    const tipoPromotorLegal = limpiarTexto(verificacion.tipoPromotorLegal || 'EMPRESA', 20);
+    const requiereNif = tipoPromotorLegal !== 'PARTICULAR';
+    return Boolean(
+        tipoPromotorLegal &&
+        limpiarTexto(verificacion.nombreComercial) &&
+        (!requiereNif || limpiarTexto(verificacion.nifCif)) &&
+        limpiarTexto(verificacion.cargo) &&
+        limpiarTexto(verificacion.telefonoProfesional) &&
+        limpiarTexto(verificacion.webRedSocial) &&
+        limpiarTexto(verificacion.ciudadesOperacion) &&
+        limpiarTexto(verificacion.tipoEventos) &&
+        limpiarTexto(verificacion.frecuenciaEventos) &&
+        limpiarTexto(verificacion.enlacePrueba) &&
+        verificacion.declaracionVeracidad === true
+    );
+}
+
+function crearTokenSesion(usuario) {
+    if (!JWT_SECRET) return null;
+    const role = usuario.esAdmin === true && esSuperadminEmail(usuario.email)
+        ? 'superadmin'
+        : (usuario.esModerador === true ? 'moderator' : 'user');
+    return jwt.sign(
+        {
+            sub: String(usuario._id),
+            email: usuario.email,
+            role
+        },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN }
+    );
+}
+
+function obtenerTokenDesdeHeader(req) {
+    const authHeader = req.header('authorization') || '';
+    if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
+    return authHeader.slice(7).trim();
+}
+
+function esModeradorActivo(usuario) {
+    return Boolean(usuario && usuario.esModerador === true && !esSuperadminEmail(usuario.email));
+}
+
+async function obtenerPermisoModeracion(usuarioId) {
+    if (!usuarioId) return null;
+    const usuario = await Usuario.findById(usuarioId).select('email esAdmin esModerador');
+    if (!usuario) return null;
+    if (esSuperadminEmail(usuario.email) && usuario.esAdmin === true) {
+        return usuario;
+    }
+    if (esModeradorActivo(usuario)) {
+        return usuario;
+    }
+    return null;
+}
+
+async function autenticarSesionOpcional(req, res, next) {
+    try {
+        req.authUser = null;
+        const token = obtenerTokenDesdeHeader(req);
+        if (!token || !JWT_SECRET) return next();
+        const payload = jwt.verify(token, JWT_SECRET);
+        if (!payload?.sub) return next();
+        const usuario = await Usuario.findById(payload.sub).select('email esAdmin esModerador tipoUsuario promotorAprobado nombre emailVerificado');
+        if (!usuario) return next();
+        if (!esSuperadminEmail(usuario.email) && usuario.emailVerificado !== true) return next();
+        req.authUser = usuario;
+        return next();
+    } catch (error) {
+        return next();
+    }
+}
+
+function requerirSesion(req, res, next) {
+    if (!req.authUser) {
+        return res.status(401).json({ error: 'Sesión no válida o caducada. Inicia sesión de nuevo.' });
+    }
+    return next();
+}
+
+async function requerirAdmin(req, res, next) {
+    if (!req.authUser) return res.status(401).json({ error: 'Sesión requerida.' });
+    const adminValido = await obtenerAdminValido(req.authUser._id);
+    if (!adminValido) return res.status(403).json({ error: 'No autorizado.' });
+    req.adminValido = adminValido;
+    return next();
+}
+
+function requerirPromotorAprobado(req, res, next) {
+    if (!req.authUser) return res.status(401).json({ error: 'Sesión requerida.' });
+    const esAdmin = req.authUser.esAdmin === true && esSuperadminEmail(req.authUser.email);
+    if (esAdmin) return next();
+    if (req.authUser.tipoUsuario === 'PROMOTOR' && req.authUser.promotorAprobado === true) return next();
+    return res.status(403).json({ error: 'Solo promotores verificados pueden realizar esta acción.' });
+}
 
 // ==========================================
 // ESQUEMAS DE BASE DE DATOS
@@ -71,6 +489,7 @@ const UsuarioSchema = new mongoose.Schema({
     tieneCoche: { type: Boolean, default: false },
     tipoUsuario: { type: String, enum: ['CLIENTE', 'PROMOTOR'], default: 'CLIENTE' },
     esAdmin: { type: Boolean, default: false },
+    esModerador: { type: Boolean, default: false },
     promotorAprobado: { type: Boolean, default: false },
     solicitudPromotor: { type: String, default: '' },
     verificacionPromotor: {
@@ -96,30 +515,125 @@ const UsuarioSchema = new mongoose.Schema({
     noInteresados: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Evento' }],
     chatsActivos: [String],
     asistencias: [String],
+    seguidores: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' }], default: [] },
+    siguiendo: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' }], default: [] },
+    amigos: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' }], default: [] },
+    solicitudesAmistadEnviadas: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' }], default: [] },
+    solicitudesAmistadRecibidas: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' }], default: [] },
+    notificacionesSociales: { type: [{
+        tipo: { type: String, enum: ['seguir', 'amistad', 'evento'], default: 'evento' },
+        titulo: { type: String, default: '' },
+        mensaje: { type: String, default: '' },
+        origenUsuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
+        origenUsuarioNombre: { type: String, default: '' },
+        eventoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Evento', default: null },
+        leida: { type: Boolean, default: false },
+        creado: { type: Date, default: Date.now }
+    }], default: [] },
+    preferenciasPlanes: { type: [String], default: [] },
+    pais: { type: String, default: '' },
+    direccionResidencia: {
+        placeId: { type: String, default: '' },
+        displayName: { type: String, default: '' },
+        latitud: { type: Number, default: null },
+        longitud: { type: Number, default: null },
+        countryCode: { type: String, default: '' },
+        countryName: { type: String, default: '' }
+    },
+    actividadSocial: { type: [
+        {
+            tipo: { type: String, enum: ['seguir', 'amistad', 'evento'], default: 'evento' },
+            titulo: { type: String, default: '' },
+            mensaje: { type: String, default: '' },
+            eventoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Evento', default: null },
+            eventoTitulo: { type: String, default: '' },
+            origenUsuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
+            origenUsuarioNombre: { type: String, default: '' },
+            creado: { type: Date, default: Date.now }
+        }
+    ], default: [] },
     valoraciones: [{
         eventoId: String,
         estrellas: Number,
         comentario: String
-    }]
+    }],
+    emailVerificado: { type: Boolean, default: false },
+    verificacionEmail: {
+        codigoHash: { type: String, default: '' },
+        expiraEn: { type: Date, default: null },
+        intentosFallidos: { type: Number, default: 0 },
+        ultimoEnvio: { type: Date, default: null }
+    },
+    ultimoLoginExitoso: { type: Date, default: null }
 }, { timestamps: true });
 
 const Usuario = mongoose.model('Usuario', UsuarioSchema);
+
+const SeguridadLogSchema = new mongoose.Schema({
+    usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
+    email: { type: String, default: '' },
+    accion: { type: String, required: true },
+    resultado: { type: String, enum: ['ok', 'error', 'bloqueado'], default: 'ok' },
+    ip: { type: String, default: '' },
+    userAgent: { type: String, default: '' },
+    detalle: { type: String, default: '' },
+    meta: { type: mongoose.Schema.Types.Mixed, default: {} }
+}, { timestamps: true });
+
+const SeguridadLog = mongoose.model('SeguridadLog', SeguridadLogSchema);
+
+app.use(autenticarSesionOpcional);
 
 function esSuperadminEmail(email) {
     return (email || '').toLowerCase() === SUPERADMIN_EMAIL;
 }
 
+async function registrarEventoSeguridad(req, accion, resultado = 'ok', detalle = '', extra = {}) {
+    try {
+        await SeguridadLog.create({
+            usuarioId: extra.usuarioId || req.authUser?._id || null,
+            email: limpiarTexto(extra.email || req.authUser?.email || '', 160),
+            accion,
+            resultado,
+            detalle: limpiarTexto(detalle, 240),
+            ip: limpiarTexto(obtenerIpCliente(req), 80),
+            userAgent: limpiarTexto(req.headers['user-agent'] || '', 240),
+            meta: extra.meta || {}
+        });
+    } catch (err) {
+        console.error('No se pudo registrar evento de seguridad:', err.message);
+    }
+}
+
 function serializarUsuario(usuario) {
     const esSuperadmin = usuario?.esAdmin === true && esSuperadminEmail(usuario.email);
+    const esModerador = usuario?.esModerador === true && !esSuperadmin;
+    const serializarIds = (lista = []) => lista.map((item) => String(item));
     return {
         id: usuario._id,
         nombre: usuario.nombre,
         email: usuario.email,
         esAdmin: esSuperadmin,
+        esModerador,
         tipoUsuario: esSuperadmin ? 'PROMOTOR' : (usuario.tipoUsuario || 'CLIENTE'),
         promotorAprobado: esSuperadmin ? true : (usuario.promotorAprobado || false),
+        emailVerificado: esSuperadmin ? true : (usuario.emailVerificado === true),
         solicitudPromotor: usuario.solicitudPromotor || '',
         verificacionPromotor: usuario.verificacionPromotor || {},
+        seguidores: serializarIds(usuario.seguidores || []),
+        siguiendo: serializarIds(usuario.siguiendo || []),
+        amigos: serializarIds(usuario.amigos || []),
+        solicitudesAmistadEnviadas: serializarIds(usuario.solicitudesAmistadEnviadas || []),
+        solicitudesAmistadRecibidas: serializarIds(usuario.solicitudesAmistadRecibidas || []),
+        notificacionesSociales: serializarNotificacionesSociales(usuario.notificacionesSociales || []),
+        actividadSocial: serializarActividadSocial(usuario.actividadSocial || []),
+        preferenciasPlanes: usuario.preferenciasPlanes || [],
+        pais: usuario.pais || '',
+        direccionResidencia: usuario.direccionResidencia || {},
+        localidad: usuario.localidad || '',
+        nacionalidad: usuario.nacionalidad || '',
+        estadoCivil: usuario.estadoCivil || '',
+        tieneCoche: usuario.tieneCoche === true,
         esPremium: usuario.esPremium,
         colorSemaforo: usuario.colorSemaforo,
         descripcionPersonal: usuario.descripcionPersonal,
@@ -129,6 +643,108 @@ function serializarUsuario(usuario) {
         chatsActivos: usuario.chatsActivos || [],
         valoraciones: usuario.valoraciones || []
     };
+}
+
+function serializarNotificacionesSociales(notificaciones = []) {
+    return notificaciones
+        .slice()
+        .sort((a, b) => new Date(b.creado || 0).getTime() - new Date(a.creado || 0).getTime())
+        .map((item, index) => ({
+            id: String(item._id || index),
+            tipo: item.tipo || 'evento',
+            titulo: item.titulo || '',
+            mensaje: item.mensaje || '',
+            origenUsuarioId: item.origenUsuarioId || null,
+            origenUsuarioNombre: item.origenUsuarioNombre || '',
+            eventoId: item.eventoId || null,
+            leida: item.leida === true,
+            creado: item.creado || null
+        }));
+}
+
+function serializarActividadSocial(actividad = []) {
+    return actividad
+        .slice()
+        .sort((a, b) => new Date(b.creado || 0).getTime() - new Date(a.creado || 0).getTime())
+        .map((item, index) => ({
+            id: String(item._id || index),
+            tipo: item.tipo || 'evento',
+            titulo: item.titulo || '',
+            mensaje: item.mensaje || '',
+            eventoId: item.eventoId || null,
+            eventoTitulo: item.eventoTitulo || '',
+            origenUsuarioId: item.origenUsuarioId || null,
+            origenUsuarioNombre: item.origenUsuarioNombre || '',
+            creado: item.creado || null
+        }));
+}
+
+function escaparRegex(valor = '') {
+    return String(valor).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizarIdLista(lista = []) {
+    return lista.map((item) => String(item));
+}
+
+function obtenerEstadoRelacionSocial(yo = {}, objetivoId) {
+    const id = String(objetivoId);
+    const seguidores = normalizarIdLista(yo.seguidores || []);
+    const siguiendo = normalizarIdLista(yo.siguiendo || []);
+    const amigos = normalizarIdLista(yo.amigos || []);
+    const solicitadas = normalizarIdLista(yo.solicitudesAmistadEnviadas || []);
+    const recibidas = normalizarIdLista(yo.solicitudesAmistadRecibidas || []);
+    return {
+        sigue: siguiendo.includes(id),
+        meSigue: seguidores.includes(id),
+        esAmigo: amigos.includes(id),
+        solicitudEnviada: solicitadas.includes(id),
+        solicitudRecibida: recibidas.includes(id)
+    };
+}
+
+async function notificarAmigosActividadUsuario(usuarioId, evento, accion) {
+    if (!usuarioId || !evento) return;
+    const usuario = await Usuario.findById(usuarioId).select('nombre amigos');
+    if (!usuario) return;
+    const amigosIds = normalizarIdLista(usuario.amigos || []);
+    if (amigosIds.length === 0) return;
+
+    const tituloAccion = accion === 'ASISTIRE' ? 'va a asistir' : 'le interesa';
+    const notificacion = {
+        tipo: 'evento',
+        titulo: `${usuario.nombre} ${tituloAccion} a ${evento.titulo}`,
+        mensaje: `${usuario.nombre} ha marcado que ${tituloAccion} a "${evento.titulo}" en Plandem.`,
+        origenUsuarioId: usuario._id,
+        origenUsuarioNombre: usuario.nombre,
+        eventoId: evento._id,
+        leida: false,
+        creado: new Date()
+    };
+
+    await Usuario.updateMany(
+        { $and: [{ _id: { $in: amigosIds } }, { _id: { $ne: usuario._id } }] },
+        { $push: { notificacionesSociales: notificacion } }
+    );
+}
+
+async function notificarRelacionSocial(destinatarioId, notificacion) {
+    if (!destinatarioId || !notificacion) return;
+    await Usuario.findByIdAndUpdate(destinatarioId, {
+        $push: { notificacionesSociales: { ...notificacion, creado: new Date() } }
+    });
+}
+
+async function registrarActividadSocial(usuarioId, actividad) {
+    if (!usuarioId || !actividad) return;
+    await Usuario.findByIdAndUpdate(usuarioId, {
+        $push: {
+            actividadSocial: {
+                ...actividad,
+                creado: new Date()
+            }
+        }
+    });
 }
 
 function normalizarModeracionChat(chatModeration = {}) {
@@ -183,6 +799,11 @@ async function obtenerAdminValido(adminId) {
     return admin;
 }
 
+function puedeGestionarEventos(usuario) {
+    if (!usuario) return false;
+    return (usuario.esAdmin === true && esSuperadminEmail(usuario.email)) || usuario.esModerador === true;
+}
+
 // Conexión a MongoDB y sincronización de índices
 mongoose.connect(MONGODB_URI)
   .then(async () => {
@@ -190,28 +811,31 @@ mongoose.connect(MONGODB_URI)
       try {
           await Evento.syncIndexes();
           await Usuario.syncIndexes();
+          await SeguridadLog.syncIndexes();
           
-          // Garantiza que el superadmin exista siempre y que la contraseña configurada sea válida.
-          const salt = await bcrypt.genSalt(10);
-          const hashedPassword = await bcrypt.hash(SUPERADMIN_PASSWORD, salt);
-          await Usuario.updateOne(
-              { email: SUPERADMIN_EMAIL },
-              {
-                  $set: {
-                      nombre: 'Plandem',
-                      password: hashedPassword,
-                      esAdmin: true,
-                      esPremium: true,
-                      tipoUsuario: 'PROMOTOR',
-                      promotorAprobado: true
+          if (SUPERADMIN_PASSWORD) {
+              const salt = await bcrypt.genSalt(10);
+              const hashedPassword = await bcrypt.hash(SUPERADMIN_PASSWORD, salt);
+              await Usuario.updateOne(
+                  { email: SUPERADMIN_EMAIL },
+                  {
+                      $set: {
+                          nombre: 'Plandem',
+                          password: hashedPassword,
+                          esAdmin: true,
+                          esPremium: true,
+                          tipoUsuario: 'PROMOTOR',
+                          promotorAprobado: true,
+                          emailVerificado: true
+                      },
+                      $setOnInsert: {
+                          fechaNacimiento: '2000-01-01'
+                      }
                   },
-                  $setOnInsert: {
-                      fechaNacimiento: '01/01/2000'
-                  }
-              },
-              { upsert: true }
-          );
-          console.log(`✅ Superadmin sincronizado para ${SUPERADMIN_EMAIL}`);
+                  { upsert: true }
+              );
+              console.log(`✅ Superadmin sincronizado para ${SUPERADMIN_EMAIL}`);
+          }
 
           // Política de seguridad: solo el perfil superadmin configurado puede mantener esAdmin=true.
           await Usuario.updateMany(
@@ -220,7 +844,12 @@ mongoose.connect(MONGODB_URI)
           );
           await Usuario.updateOne(
               { email: SUPERADMIN_EMAIL },
-              { $set: { esAdmin: true, tipoUsuario: 'PROMOTOR', promotorAprobado: true } }
+              { $set: { esAdmin: true, tipoUsuario: 'PROMOTOR', promotorAprobado: true, emailVerificado: true } }
+          );
+
+          await Usuario.updateMany(
+              { emailVerificado: { $exists: false } },
+              { $set: { emailVerificado: true } }
           );
       } catch (e) { console.error('Error al inicializar datos:', e); }
   })
@@ -238,41 +867,68 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/eventos', async (req, res) => {
     try {
-        const eventos = await Evento.find();
+        const eventos = await Evento.find().lean();
+        if (req.authUser?._id) {
+            const usuario = await Usuario.findById(req.authUser._id).select('preferenciasPlanes').lean();
+            const eventosOrdenados = eventos
+                .map((evento) => ({
+                    ...evento,
+                    __scorePreferencia: scoreEventoPorPreferencias(usuario, evento)
+                }))
+                .sort((a, b) => {
+                    if ((b.__scorePreferencia || 0) !== (a.__scorePreferencia || 0)) {
+                        return (b.__scorePreferencia || 0) - (a.__scorePreferencia || 0);
+                    }
+                    const fechaA = a.fechaInicio ? Date.parse(a.fechaInicio) : 0;
+                    const fechaB = b.fechaInicio ? Date.parse(b.fechaInicio) : 0;
+                    return fechaB - fechaA;
+                })
+                .map(({ __scorePreferencia, ...evento }) => evento);
+            return res.json(eventosOrdenados);
+        }
         res.json(eventos);
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.get('/api/usuarios/promotor-solicitudes', async (req, res) => {
+app.get('/api/usuarios/promotor-solicitudes', requerirAdmin, async (req, res) => {
     try {
-        const adminId = req.header('x-admin-id');
-        const adminValido = await obtenerAdminValido(adminId);
-        if (!adminValido) return res.status(403).json({ error: 'No autorizado para ver solicitudes.' });
         const solicitudes = await Usuario.find({ tipoUsuario: 'PROMOTOR', promotorAprobado: false }).select('-password');
         res.json({ solicitudes });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.get('/api/usuarios', async (req, res) => {
+app.get('/api/usuarios', requerirAdmin, async (req, res) => {
     try {
-        const adminId = req.header('x-admin-id');
-        const adminValido = await obtenerAdminValido(adminId);
-        if (!adminValido) return res.status(403).json({ error: 'No autorizado para ver usuarios.' });
         const usuarios = await Usuario.find().select('-password').sort({ createdAt: -1 });
         res.json({ usuarios });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.get('/api/usuarios/:id', async (req, res) => {
+app.get('/api/seguridad/logs', requerirAdmin, async (req, res) => {
+    try {
+        const limite = Math.min(Math.max(Number(req.query.limit || 100), 1), 300);
+        const logs = await SeguridadLog.find().sort({ createdAt: -1 }).limit(limite);
+        res.json({ logs });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/usuarios/:id', requerirSesion, async (req, res) => {
     try {
         const { id } = req.params;
+        const esMismoUsuario = String(req.authUser._id) === String(id);
+        const adminValido = esMismoUsuario ? null : await obtenerAdminValido(req.authUser._id);
+        if (!esMismoUsuario && !adminValido) {
+            return res.status(403).json({ error: 'No autorizado para ver este perfil.' });
+        }
         const usuario = await Usuario.findById(id).select('-password');
         if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado.' });
         res.json({ usuario: serializarUsuario(usuario) });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/eventos', upload.fields([{ name: 'multimedia', maxCount: 1 }, { name: 'galeria', maxCount: 10 }]), async (req, res) => {
+app.post('/api/eventos', requerirSesion, requerirPromotorAprobado, upload.fields([{ name: 'multimedia', maxCount: 1 }, { name: 'galeria', maxCount: 10 }]), async (req, res) => {
     try {
         const { titulo, ubicacion } = req.body;
         const existe = await Evento.findOne({ titulo: titulo });
@@ -281,14 +937,11 @@ app.post('/api/eventos', upload.fields([{ name: 'multimedia', maxCount: 1 }, { n
         const datosEvento = { ...req.body };
         
         datosEvento.esPremium = req.body.esPremium === 'true' || req.body.esPremium === true;
-        
-        if (ubicacion) {
-            if (typeof ubicacion === 'string') {
-                datosEvento.ubicacion = JSON.parse(ubicacion);
-            } else {
-                datosEvento.ubicacion = ubicacion;
-            }
+        const ubicacionNormalizada = normalizarUbicacionEvento(ubicacion);
+        if (!ubicacionNormalizada) {
+            return res.status(400).json({ error: 'Debes seleccionar una ubicación válida desde las sugerencias.' });
         }
+        datosEvento.ubicacion = ubicacionNormalizada;
         
         if (req.files) {
             if (req.files.multimedia && req.files.multimedia[0]) {
@@ -305,18 +958,27 @@ app.post('/api/eventos', upload.fields([{ name: 'multimedia', maxCount: 1 }, { n
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/eventos/:id', upload.fields([{ name: 'multimedia', maxCount: 1 }, { name: 'galeria', maxCount: 10 }]), async (req, res) => {
+app.put('/api/eventos/:id', requerirSesion, upload.fields([{ name: 'multimedia', maxCount: 1 }, { name: 'galeria', maxCount: 10 }]), async (req, res) => {
     try {
         const { id } = req.params;
         const { ubicacion } = req.body;
+        const permisoModeracion = await obtenerPermisoModeracion(req.authUser._id);
+        const esPromotorAprobado = req.authUser.tipoUsuario === 'PROMOTOR' && req.authUser.promotorAprobado === true;
+        if (!permisoModeracion && !esPromotorAprobado) {
+            return res.status(403).json({ error: 'Solo un promotor aprobado, moderador o superadmin puede editar eventos.' });
+        }
         const datosActualizados = { ...req.body };
 
         if (req.body.esPremium !== undefined) {
             datosActualizados.esPremium = req.body.esPremium === 'true' || req.body.esPremium === true;
         }
 
-        if (ubicacion) {
-            datosActualizados.ubicacion = typeof ubicacion === 'string' ? JSON.parse(ubicacion) : ubicacion;
+        if (ubicacion !== undefined) {
+            const ubicacionNormalizada = normalizarUbicacionEvento(ubicacion);
+            if (!ubicacionNormalizada) {
+                return res.status(400).json({ error: 'Debes seleccionar una ubicación válida desde las sugerencias.' });
+            }
+            datosActualizados.ubicacion = ubicacionNormalizada;
         }
 
         if (req.files) {
@@ -336,12 +998,37 @@ app.put('/api/eventos/:id', upload.fields([{ name: 'multimedia', maxCount: 1 }, 
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/eventos/:id/interaccion', async (req, res) => {
+app.delete('/api/eventos/:id', requerirSesion, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const permisoModeracion = await obtenerPermisoModeracion(req.authUser._id);
+        if (!permisoModeracion) {
+            return res.status(403).json({ error: 'Solo moderadores o superadmin pueden borrar eventos.' });
+        }
+
+        const eventoEliminado = await Evento.findByIdAndDelete(id);
+        if (!eventoEliminado) return res.status(404).json({ error: 'El evento no existe.' });
+
+        await Usuario.updateMany({}, { $pull: { favoritos: id, asistencias: id, chatsActivos: id, noInteresados: id } });
+
+        res.json({ success: true, mensaje: 'Evento eliminado correctamente.' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/eventos/:id/interaccion', requerirSesion, async (req, res) => {
     try {
         const { id } = req.params;
         const { usuarioId, accion, modoSocial } = req.body;
 
         if (!usuarioId) return res.status(401).json({ error: "Debes estar registrado para interactuar." });
+        if (String(req.authUser._id) !== String(usuarioId)) {
+            return res.status(403).json({ error: 'No autorizado para operar con otro usuario.' });
+        }
+
+        const evento = await Evento.findById(id).select('titulo');
+        if (!evento) return res.status(404).json({ error: 'Evento no encontrado.' });
 
         let chatHabilitado = false;
         let mensaje = "";
@@ -365,12 +1052,257 @@ app.post('/api/eventos/:id/interaccion', async (req, res) => {
             mensaje = "Evento descartado. No se mostrarán planes similares.";
         }
 
+        if (accion === 'ME_INTERESA' || accion === 'ASISTIRE') {
+            await notificarAmigosActividadUsuario(usuarioId, evento, accion);
+            await registrarActividadSocial(usuarioId, {
+                tipo: 'evento',
+                titulo: accion === 'ASISTIRE' ? 'Va a asistir a un evento' : 'Le interesa un evento',
+                mensaje: accion === 'ASISTIRE'
+                    ? `Ha marcado asistencia en "${evento.titulo}".`
+                    : `Ha mostrado interés en "${evento.titulo}".`,
+                eventoId: evento._id,
+                eventoTitulo: evento.titulo,
+                origenUsuarioId: req.authUser._id,
+                origenUsuarioNombre: req.authUser.nombre || ''
+            });
+        }
+
         res.json({ success: true, mensaje, chatHabilitado });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-const audioUpload = multer({ dest: 'uploads/' });
-app.post('/api/eventos/:id/audio', audioUpload.single('audioBlobs'), async (req, res) => {
+app.get('/api/red-social/comunidad', requerirSesion, async (req, res) => {
+    try {
+        const termino = limpiarTexto(req.query.q || '', 80);
+        const miUsuario = await Usuario.findById(req.authUser._id).select('seguidores siguiendo amigos solicitudesAmistadEnviadas solicitudesAmistadRecibidas');
+        const filtro = { _id: { $ne: req.authUser._id } };
+        if (termino) {
+            const regex = new RegExp(escaparRegex(termino), 'i');
+            filtro.$or = [{ nombre: regex }, { email: regex }, { localidad: regex }];
+        }
+
+        const usuarios = await Usuario.find(filtro)
+            .select('nombre email fotos colorSemaforo tipoUsuario promotorAprobado localidad')
+            .sort({ nombre: 1 })
+            .limit(40);
+
+        const relaciones = miUsuario || { seguidores: [], siguiendo: [], amigos: [], solicitudesAmistadEnviadas: [], solicitudesAmistadRecibidas: [] };
+        res.json({
+            usuarios: usuarios.map((usuario) => ({
+                id: usuario._id,
+                nombre: usuario.nombre,
+                email: usuario.email,
+                fotos: usuario.fotos,
+                colorSemaforo: usuario.colorSemaforo,
+                tipoUsuario: usuario.tipoUsuario,
+                promotorAprobado: usuario.promotorAprobado,
+                localidad: usuario.localidad || '',
+                relacion: obtenerEstadoRelacionSocial(relaciones, usuario._id)
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/red-social/notificaciones', requerirSesion, async (req, res) => {
+    try {
+        const usuario = await Usuario.findById(req.authUser._id).select('notificacionesSociales');
+        res.json({ notificaciones: serializarNotificacionesSociales(usuario?.notificacionesSociales || []) });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/red-social/muro', requerirSesion, async (req, res) => {
+    try {
+        const me = await Usuario.findById(req.authUser._id)
+            .select('nombre fotos amigos actividadSocial')
+            .lean();
+        if (!me) return res.status(404).json({ error: 'Usuario no encontrado.' });
+
+        const amigosIds = normalizarIdLista(me.amigos || []);
+        const amigos = amigosIds.length > 0
+            ? await Usuario.find({ _id: { $in: amigosIds } })
+                .select('nombre fotos actividadSocial colorSemaforo')
+                .lean()
+            : [];
+
+        const actores = [{
+            id: String(me._id),
+            nombre: me.nombre,
+            fotos: me.fotos,
+            colorSemaforo: 'VERDE',
+            actividadSocial: me.actividadSocial || []
+        }, ...amigos];
+
+        const muro = actores.flatMap((actor) => (actor.actividadSocial || []).map((actividad) => ({
+            id: String(actividad._id || actividad.id || `${actor.id}-${actividad.creado || Date.now()}`),
+            actorId: String(actor._id || actor.id),
+            actorNombre: actor.nombre,
+            actorFotos: actor.fotos || [],
+            actorColorSemaforo: actor.colorSemaforo || 'AMARILLO',
+            tipo: actividad.tipo || 'evento',
+            titulo: actividad.titulo || '',
+            mensaje: actividad.mensaje || '',
+            eventoId: actividad.eventoId || null,
+            eventoTitulo: actividad.eventoTitulo || '',
+            creado: actividad.creado || null,
+            esPropia: String(actor._id || actor.id) === String(me._id)
+        })))
+            .sort((a, b) => new Date(b.creado || 0).getTime() - new Date(a.creado || 0).getTime())
+            .slice(0, 30);
+
+        res.json({ muro });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/red-social/notificaciones/marcar-leidas', requerirSesion, async (req, res) => {
+    try {
+        await Usuario.findByIdAndUpdate(req.authUser._id, { $set: { 'notificacionesSociales.$[].leida': true } });
+        const usuario = await Usuario.findById(req.authUser._id).select('notificacionesSociales');
+        res.json({ success: true, notificaciones: serializarNotificacionesSociales(usuario?.notificacionesSociales || []) });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/red-social/accion', requerirSesion, async (req, res) => {
+    try {
+        const { objetivoId, accion } = req.body;
+        const usuarioId = String(req.authUser._id);
+        if (!objetivoId) return res.status(400).json({ error: 'Falta el usuario objetivo.' });
+        if (!accion) return res.status(400).json({ error: 'Falta la acción social.' });
+        if (String(objetivoId) === usuarioId) return res.status(400).json({ error: 'No puedes aplicar esta acción sobre tu propio perfil.' });
+
+        const [yo, objetivo] = await Promise.all([
+            Usuario.findById(usuarioId).select('nombre seguidores siguiendo amigos solicitudesAmistadEnviadas solicitudesAmistadRecibidas'),
+            Usuario.findById(objetivoId).select('nombre seguidores siguiendo amigos solicitudesAmistadEnviadas solicitudesAmistadRecibidas')
+        ]);
+
+        if (!yo || !objetivo) return res.status(404).json({ error: 'Usuario no encontrado.' });
+
+        const metaRespuesta = { mensaje: '', relacion: null };
+        const misSeguidores = normalizarIdLista(yo.seguidores || []);
+        const miSiguiendo = normalizarIdLista(yo.siguiendo || []);
+        const misAmigos = normalizarIdLista(yo.amigos || []);
+        const solicitudesEnviadas = normalizarIdLista(yo.solicitudesAmistadEnviadas || []);
+        const solicitudesRecibidas = normalizarIdLista(yo.solicitudesAmistadRecibidas || []);
+
+        const objetivoSeguidores = normalizarIdLista(objetivo.seguidores || []);
+        const objetivoSiguiendo = normalizarIdLista(objetivo.siguiendo || []);
+        const objetivoAmigos = normalizarIdLista(objetivo.amigos || []);
+        const objetivoSolicitudesEnviadas = normalizarIdLista(objetivo.solicitudesAmistadEnviadas || []);
+        const objetivoSolicitudesRecibidas = normalizarIdLista(objetivo.solicitudesAmistadRecibidas || []);
+
+        const quitarElemento = (lista, valor) => lista.filter((item) => String(item) !== String(valor));
+        const agregarElemento = (lista, valor) => {
+            if (!lista.some((item) => String(item) === String(valor))) lista.push(valor);
+        };
+
+        if (accion === 'seguir') {
+            agregarElemento(miSiguiendo, objetivoId);
+            agregarElemento(objetivoSeguidores, yo._id);
+            metaRespuesta.mensaje = `Ahora sigues a ${objetivo.nombre}.`;
+            await notificarRelacionSocial(objetivoId, {
+                tipo: 'seguir',
+                titulo: `${yo.nombre} te sigue`,
+                mensaje: `${yo.nombre} ha empezado a seguirte en Plandem.`,
+                origenUsuarioId: yo._id,
+                origenUsuarioNombre: yo.nombre,
+                leida: false
+            });
+        } else if (accion === 'dejar_de_seguir') {
+            yo.siguiendo = quitarElemento(miSiguiendo, objetivoId);
+            objetivo.seguidores = quitarElemento(objetivoSeguidores, yo._id);
+            metaRespuesta.mensaje = `Has dejado de seguir a ${objetivo.nombre}.`;
+        } else if (accion === 'solicitar_amistad') {
+            if (misAmigos.includes(String(objetivoId))) {
+                return res.json({ success: true, mensaje: 'Ya sois amigos.', relacion: obtenerEstadoRelacionSocial(yo, objetivoId) });
+            }
+            agregarElemento(solicitudesEnviadas, objetivoId);
+            agregarElemento(objetivoSolicitudesRecibidas, yo._id);
+            metaRespuesta.mensaje = `Solicitud de amistad enviada a ${objetivo.nombre}.`;
+            await notificarRelacionSocial(objetivoId, {
+                tipo: 'amistad',
+                titulo: 'Nueva solicitud de amistad',
+                mensaje: `${yo.nombre} te ha enviado una solicitud de amistad.`,
+                origenUsuarioId: yo._id,
+                origenUsuarioNombre: yo.nombre,
+                leida: false
+            });
+        } else if (accion === 'cancelar_solicitud_amistad') {
+            yo.solicitudesAmistadEnviadas = quitarElemento(solicitudesEnviadas, objetivoId);
+            objetivo.solicitudesAmistadRecibidas = quitarElemento(objetivoSolicitudesRecibidas, yo._id);
+            metaRespuesta.mensaje = `Solicitud cancelada.`;
+        } else if (accion === 'aceptar_solicitud_amistad') {
+            if (!solicitudesRecibidas.includes(String(objetivoId))) {
+                return res.status(400).json({ error: 'No existe una solicitud pendiente de ese usuario.' });
+            }
+            agregarElemento(misAmigos, objetivoId);
+            agregarElemento(objetivoAmigos, yo._id);
+            yo.solicitudesAmistadRecibidas = quitarElemento(solicitudesRecibidas, objetivoId);
+            yo.solicitudesAmistadEnviadas = quitarElemento(solicitudesEnviadas, objetivoId);
+            objetivo.solicitudesAmistadEnviadas = quitarElemento(objetivoSolicitudesEnviadas, yo._id);
+            objetivo.solicitudesAmistadRecibidas = quitarElemento(objetivoSolicitudesRecibidas, yo._id);
+            metaRespuesta.mensaje = `Ahora eres amigo de ${objetivo.nombre}.`;
+            await notificarRelacionSocial(objetivoId, {
+                tipo: 'amistad',
+                titulo: 'Solicitud de amistad aceptada',
+                mensaje: `${yo.nombre} ha aceptado tu solicitud de amistad.`,
+                origenUsuarioId: yo._id,
+                origenUsuarioNombre: yo.nombre,
+                leida: false
+            });
+        } else if (accion === 'rechazar_solicitud_amistad') {
+            yo.solicitudesAmistadRecibidas = quitarElemento(solicitudesRecibidas, objetivoId);
+            objetivo.solicitudesAmistadEnviadas = quitarElemento(objetivoSolicitudesEnviadas, yo._id);
+            metaRespuesta.mensaje = `Solicitud rechazada.`;
+        } else if (accion === 'dejar_amigo') {
+            yo.amigos = quitarElemento(misAmigos, objetivoId);
+            objetivo.amigos = quitarElemento(objetivoAmigos, yo._id);
+            metaRespuesta.mensaje = `Has dejado de ser amigo de ${objetivo.nombre}.`;
+        } else {
+            return res.status(400).json({ error: 'Acción social no soportada.' });
+        }
+
+        yo.siguiendo = normalizarIdLista(miSiguiendo);
+        yo.seguidores = normalizarIdLista(misSeguidores);
+        yo.amigos = normalizarIdLista(misAmigos);
+        yo.solicitudesAmistadEnviadas = normalizarIdLista(solicitudesEnviadas);
+        yo.solicitudesAmistadRecibidas = normalizarIdLista(solicitudesRecibidas);
+
+        objetivo.siguiendo = normalizarIdLista(objetivoSiguiendo);
+        objetivo.seguidores = normalizarIdLista(objetivoSeguidores);
+        objetivo.amigos = normalizarIdLista(objetivoAmigos);
+        objetivo.solicitudesAmistadEnviadas = normalizarIdLista(objetivoSolicitudesEnviadas);
+        objetivo.solicitudesAmistadRecibidas = normalizarIdLista(objetivoSolicitudesRecibidas);
+
+        await Promise.all([yo.save(), objetivo.save()]);
+
+        res.json({
+            success: true,
+            mensaje: metaRespuesta.mensaje,
+            relacion: obtenerEstadoRelacionSocial(yo, objetivoId)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+const audioUpload = multer({
+    dest: 'uploads/',
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (!MIME_AUDIO_PERMITIDOS.has(file.mimetype)) {
+            return cb(new Error('Formato de audio no permitido.'));
+        }
+        cb(null, true);
+    }
+});
+app.post('/api/eventos/:id/audio', requerirSesion, requerirPromotorAprobado, audioUpload.single('audioBlobs'), async (req, res) => {
     try {
         const { id } = req.params;
         const { usuario } = req.body;
@@ -384,27 +1316,71 @@ app.post('/api/eventos/:id/audio', audioUpload.single('audioBlobs'), async (req,
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/usuarios/registro', async (req, res) => {
+async function prepararVerificacionEmail(usuario) {
+    const codigo = generarCodigoOTP();
+    const expiraEn = new Date(Date.now() + OTP_EXP_MINUTES * 60 * 1000);
+    usuario.verificacionEmail = {
+        codigoHash: hashOTP(usuario.email, codigo),
+        expiraEn,
+        intentosFallidos: 0,
+        ultimoEnvio: new Date()
+    };
+    usuario.emailVerificado = false;
+    await usuario.save();
+    await enviarCodigoVerificacionEmail(usuario.email, codigo);
+}
+
+app.post('/api/usuarios/registro', registerLimiter, async (req, res) => {
     try {
-        const { email, password, nombre, fechaNacimiento, localidad, nacionalidad, estadoCivil, tieneCoche, colorSemaforo, descripcionPersonal, tipoUsuario, solicitudPromotor, verificacionPromotor } = req.body;
-        const usuarioExiste = await Usuario.findOne({ email });
+        const { email, password, nombre, fechaNacimiento, localidad, nacionalidad, estadoCivil, tieneCoche, colorSemaforo, descripcionPersonal, tipoUsuario, solicitudPromotor, verificacionPromotor, pais, direccionResidencia, preferenciasPlanes } = req.body;
+        const emailNormalizado = limpiarTexto((email || '').toLowerCase(), 160);
+        const nombreNormalizado = limpiarTexto(nombre, 100);
+        const fechaNacimientoNormalizada = limpiarTexto(fechaNacimiento, 25);
+        if (!emailNormalizado || !nombreNormalizado || !fechaNacimientoNormalizada || !password) {
+            return res.status(400).json({ error: 'Faltan campos obligatorios para registrarte.' });
+        }
+        if (!emailValido(emailNormalizado)) {
+            return res.status(400).json({ error: 'El correo electrónico no es válido.' });
+        }
+        if (!passwordRobusta(password)) {
+            return res.status(400).json({ error: 'La contraseña debe tener mínimo 10 caracteres e incluir mayúsculas, minúsculas, números y símbolo.' });
+        }
+        if (!esMayorDeEdad(fechaNacimientoNormalizada, 18)) {
+            return res.status(403).json({ error: 'Registro no permitido para menores de edad.' });
+        }
+
+        if (!validarPaisCodigo(pais)) {
+            return res.status(400).json({ error: 'Debes seleccionar un país válido de la lista.' });
+        }
+
+        const direccionNormalizada = normalizarDireccionSeleccionada(direccionResidencia);
+        if (!direccionNormalizada) {
+            return res.status(400).json({ error: 'Debes seleccionar una dirección válida desde las sugerencias.' });
+        }
+
+        const preferenciasNormalizadas = normalizarListaOpciones(preferenciasPlanes, PLAN_PREFERENCIAS_PERMITIDAS);
+
+        const usuarioExiste = await Usuario.findOne({ email: emailNormalizado });
         if (usuarioExiste) return res.status(400).json({ error: "El correo electrónico ya está registrado." });
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const esPromotor = tipoUsuario === 'PROMOTOR';
+        if (esPromotor && !verificacionPromotorCompleta(verificacionPromotor || {})) {
+            return res.status(400).json({ error: 'Para cuenta de promotor debes completar todos los datos de verificación.' });
+        }
         const datosVerificacion = esPromotor ? {
-            tipoPromotorLegal: verificacionPromotor?.tipoPromotorLegal || 'EMPRESA',
-            nombreComercial: verificacionPromotor?.nombreComercial || '',
-            nifCif: verificacionPromotor?.nifCif || '',
-            cargo: verificacionPromotor?.cargo || '',
-            telefonoProfesional: verificacionPromotor?.telefonoProfesional || '',
-            webRedSocial: verificacionPromotor?.webRedSocial || '',
-            ciudadesOperacion: verificacionPromotor?.ciudadesOperacion || '',
-            tipoEventos: verificacionPromotor?.tipoEventos || '',
-            frecuenciaEventos: verificacionPromotor?.frecuenciaEventos || '',
-            enlacePrueba: verificacionPromotor?.enlacePrueba || '',
+            tipoPromotorLegal: limpiarTexto(verificacionPromotor?.tipoPromotorLegal || 'EMPRESA', 20),
+            nombreComercial: limpiarTexto(verificacionPromotor?.nombreComercial, 160),
+            nifCif: limpiarTexto(verificacionPromotor?.nifCif, 60),
+            cargo: limpiarTexto(verificacionPromotor?.cargo, 120),
+            telefonoProfesional: limpiarTexto(verificacionPromotor?.telefonoProfesional, 40),
+            webRedSocial: limpiarTexto(verificacionPromotor?.webRedSocial, 240),
+            ciudadesOperacion: limpiarTexto(verificacionPromotor?.ciudadesOperacion, 240),
+            tipoEventos: limpiarTexto(verificacionPromotor?.tipoEventos, 240),
+            frecuenciaEventos: limpiarTexto(verificacionPromotor?.frecuenciaEventos, 80),
+            enlacePrueba: limpiarTexto(verificacionPromotor?.enlacePrueba, 240),
             declaracionVeracidad: verificacionPromotor?.declaracionVeracidad === true
         } : {
             tipoPromotorLegal: 'EMPRESA',
@@ -420,39 +1396,164 @@ app.post('/api/usuarios/registro', async (req, res) => {
             declaracionVeracidad: false
         };
         const nuevoUsuario = new Usuario({
-            nombre,
-            email,
+            nombre: nombreNormalizado,
+            email: emailNormalizado,
             password: hashedPassword,
-            fechaNacimiento,
-            localidad,
-            nacionalidad,
-            estadoCivil,
+            fechaNacimiento: fechaNacimientoNormalizada,
+            localidad: limpiarTexto(localidad, 100),
+            nacionalidad: limpiarTexto(nacionalidad, 80),
+            pais: String(pais).toUpperCase(),
+            direccionResidencia: direccionNormalizada,
+            estadoCivil: limpiarTexto(estadoCivil, 40) || 'No especificado',
             tieneCoche: tieneCoche === 'true' || tieneCoche === true,
             colorSemaforo: colorSemaforo || 'AMARILLO',
-            descripcionPersonal,
+            descripcionPersonal: limpiarTexto(descripcionPersonal, 400),
             tipoUsuario: esPromotor ? 'PROMOTOR' : 'CLIENTE',
             promotorAprobado: false,
-            solicitudPromotor: esPromotor ? (solicitudPromotor || '') : '',
-            verificacionPromotor: datosVerificacion
+            solicitudPromotor: esPromotor ? limpiarTexto(solicitudPromotor, 500) : '',
+            verificacionPromotor: datosVerificacion,
+            preferenciasPlanes: preferenciasNormalizadas,
+            emailVerificado: false,
+            verificacionEmail: {
+                codigoHash: '',
+                expiraEn: null,
+                intentosFallidos: 0,
+                ultimoEnvio: null
+            }
         });
 
         await nuevoUsuario.save();
-        res.status(201).json({ mensaje: "Usuario registrado con éxito", usuarioId: nuevoUsuario._id });
+        await prepararVerificacionEmail(nuevoUsuario);
+        await registrarEventoSeguridad(req, 'registro_usuario', 'ok', 'Registro inicial correcto, pendiente verificación email.', {
+            usuarioId: nuevoUsuario._id,
+            email: nuevoUsuario.email
+        });
+
+        res.status(201).json({
+            mensaje: 'Usuario registrado con éxito. Revisa tu email para verificar la cuenta.',
+            usuarioId: nuevoUsuario._id,
+            requiereVerificacionEmail: true,
+            email: nuevoUsuario.email
+        });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/admin/usuarios-promotor', async (req, res) => {
+app.post('/api/usuarios/verificar-email', otpLimiter, async (req, res) => {
     try {
-        const adminId = req.header('x-admin-id');
-        const adminValido = await obtenerAdminValido(adminId);
-        if (!adminValido) return res.status(403).json({ error: 'No autorizado para crear promotores.' });
-
-        const { nombre, email, password, promotorAprobado } = req.body;
-        if (!nombre || !email || !password) {
-            return res.status(400).json({ error: 'Faltan campos obligatorios para crear el promotor.' });
+        const emailNormalizado = limpiarTexto((req.body?.email || '').toLowerCase(), 160);
+        const codigo = limpiarTexto(req.body?.codigo || '', 10);
+        if (!emailNormalizado || !codigo) {
+            return res.status(400).json({ error: 'Email y código son obligatorios.' });
         }
 
-        const usuarioExiste = await Usuario.findOne({ email });
+        const usuario = await Usuario.findOne({ email: emailNormalizado });
+        if (!usuario) {
+            await registrarEventoSeguridad(req, 'verificar_email_otp', 'error', 'Usuario no encontrado.', { email: emailNormalizado });
+            return res.status(400).json({ error: 'Código inválido o expirado.' });
+        }
+        if (usuario.emailVerificado === true) {
+            return res.json({ success: true, mensaje: 'Tu email ya estaba verificado.' });
+        }
+        if (!usuarioTieneVerificacionPendiente(usuario)) {
+            await registrarEventoSeguridad(req, 'verificar_email_otp', 'error', 'Código expirado o inexistente.', {
+                usuarioId: usuario._id,
+                email: usuario.email
+            });
+            return res.status(400).json({ error: 'Código inválido o expirado. Solicita uno nuevo.' });
+        }
+
+        const intentosActuales = Number(usuario.verificacionEmail?.intentosFallidos || 0);
+        if (intentosActuales >= OTP_MAX_ATTEMPTS) {
+            await registrarEventoSeguridad(req, 'verificar_email_otp', 'bloqueado', 'Máximo de intentos OTP alcanzado.', {
+                usuarioId: usuario._id,
+                email: usuario.email
+            });
+            return res.status(429).json({ error: 'Demasiados intentos fallidos. Solicita un nuevo código.' });
+        }
+
+        const hashEsperado = usuario.verificacionEmail?.codigoHash || '';
+        const hashRecibido = hashOTP(usuario.email, codigo);
+        if (hashRecibido !== hashEsperado) {
+            usuario.verificacionEmail.intentosFallidos = intentosActuales + 1;
+            await usuario.save();
+            await registrarEventoSeguridad(req, 'verificar_email_otp', 'error', 'Código OTP incorrecto.', {
+                usuarioId: usuario._id,
+                email: usuario.email,
+                meta: { intentosFallidos: usuario.verificacionEmail.intentosFallidos }
+            });
+            return res.status(400).json({ error: 'Código inválido o expirado.' });
+        }
+
+        usuario.emailVerificado = true;
+        usuario.verificacionEmail = {
+            codigoHash: '',
+            expiraEn: null,
+            intentosFallidos: 0,
+            ultimoEnvio: usuario.verificacionEmail?.ultimoEnvio || null
+        };
+        await usuario.save();
+        await registrarEventoSeguridad(req, 'verificar_email_otp', 'ok', 'Email verificado correctamente.', {
+            usuarioId: usuario._id,
+            email: usuario.email
+        });
+
+        return res.json({ success: true, mensaje: 'Email verificado correctamente. Ya puedes iniciar sesión.' });
+    } catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/usuarios/reenviar-verificacion-email', otpLimiter, async (req, res) => {
+    try {
+        const emailNormalizado = limpiarTexto((req.body?.email || '').toLowerCase(), 160);
+        if (!emailNormalizado) {
+            return res.status(400).json({ error: 'Debes indicar un email válido.' });
+        }
+        const usuario = await Usuario.findOne({ email: emailNormalizado });
+        if (!usuario) {
+            await registrarEventoSeguridad(req, 'reenviar_email_otp', 'error', 'Reenvío solicitado para email inexistente.', { email: emailNormalizado });
+            return res.json({ success: true, mensaje: 'Si el email existe, recibirás un nuevo código.' });
+        }
+        if (usuario.emailVerificado === true) {
+            return res.json({ success: true, mensaje: 'Este email ya está verificado.' });
+        }
+
+        const ultimoEnvio = usuario.verificacionEmail?.ultimoEnvio ? new Date(usuario.verificacionEmail.ultimoEnvio).getTime() : 0;
+        if (ultimoEnvio && Date.now() - ultimoEnvio < 60 * 1000) {
+            return res.status(429).json({ error: 'Espera al menos 1 minuto antes de solicitar otro código.' });
+        }
+
+        await prepararVerificacionEmail(usuario);
+        await registrarEventoSeguridad(req, 'reenviar_email_otp', 'ok', 'Código OTP reenviado.', {
+            usuarioId: usuario._id,
+            email: usuario.email
+        });
+
+        return res.json({ success: true, mensaje: 'Te hemos enviado un nuevo código de verificación.' });
+    } catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/usuarios-promotor', requerirAdmin, async (req, res) => {
+    try {
+        const { nombre, email, password, promotorAprobado, tipoPerfil } = req.body;
+        if (!nombre || !email || !password) {
+            return res.status(400).json({ error: 'Faltan campos obligatorios para crear el perfil.' });
+        }
+        if (!emailValido(String(email).toLowerCase())) {
+            return res.status(400).json({ error: 'Email no válido.' });
+        }
+        if (!passwordRobusta(password)) {
+            return res.status(400).json({ error: 'La contraseña temporal no cumple el mínimo de seguridad.' });
+        }
+
+        const perfilNormalizado = String(tipoPerfil || 'PROMOTOR').toUpperCase();
+        if (!['PROMOTOR', 'MODERADOR'].includes(perfilNormalizado)) {
+            return res.status(400).json({ error: 'El tipo de perfil no es válido.' });
+        }
+
+        const usuarioExiste = await Usuario.findOne({ email: String(email).toLowerCase() });
         if (usuarioExiste) {
             return res.status(400).json({ error: 'Ya existe un usuario con ese email.' });
         }
@@ -461,14 +1562,15 @@ app.post('/api/admin/usuarios-promotor', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const nuevoPromotor = await Usuario.create({
-            nombre,
-            email,
+            nombre: limpiarTexto(nombre, 100),
+            email: String(email).toLowerCase(),
             password: hashedPassword,
             fechaNacimiento: '1990-01-01',
-            tipoUsuario: 'PROMOTOR',
-            promotorAprobado: promotorAprobado === true,
-            solicitudPromotor: 'Creado manualmente por administrador.',
-            verificacionPromotor: {
+            tipoUsuario: perfilNormalizado === 'PROMOTOR' ? 'PROMOTOR' : 'CLIENTE',
+            esModerador: perfilNormalizado === 'MODERADOR',
+            promotorAprobado: perfilNormalizado === 'PROMOTOR' ? promotorAprobado === true : false,
+            solicitudPromotor: perfilNormalizado === 'PROMOTOR' ? 'Creado manualmente por administrador.' : '',
+            verificacionPromotor: perfilNormalizado === 'PROMOTOR' ? {
                 tipoPromotorLegal: 'PARTICULAR',
                 nombreComercial: nombre,
                 nifCif: '',
@@ -480,17 +1582,18 @@ app.post('/api/admin/usuarios-promotor', async (req, res) => {
                 frecuenciaEventos: '',
                 enlacePrueba: '',
                 declaracionVeracidad: true
-            }
+            } : {}
         });
 
         res.status(201).json({
             success: true,
-            mensaje: 'Promotor creado correctamente.',
+            mensaje: perfilNormalizado === 'MODERADOR' ? 'Moderador creado correctamente.' : 'Promotor creado correctamente.',
             usuario: {
                 id: nuevoPromotor._id,
                 nombre: nuevoPromotor.nombre,
                 email: nuevoPromotor.email,
                 tipoUsuario: nuevoPromotor.tipoUsuario,
+                esModerador: nuevoPromotor.esModerador === true,
                 promotorAprobado: nuevoPromotor.promotorAprobado
             }
         });
@@ -499,18 +1602,54 @@ app.post('/api/admin/usuarios-promotor', async (req, res) => {
     }
 });
 
-app.post('/api/usuarios/login', async (req, res) => {
+app.post('/api/usuarios/login', authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
-        const usuario = await Usuario.findOne({ email });
-        if (!usuario) return res.status(404).json({ error: "El usuario no existe." });
+        const identificador = limpiarTexto(email || '', 160);
+        const emailNormalizado = identificador.toLowerCase();
+        let usuario = await Usuario.findOne({ email: emailNormalizado });
+        if (!usuario && identificador) {
+            const regexNombre = new RegExp(`^${escaparRegex(identificador)}$`, 'i');
+            usuario = await Usuario.findOne({ nombre: regexNombre });
+        }
+        if (!usuario) {
+            await registrarEventoSeguridad(req, 'login', 'error', 'Intento con identificador no registrado.', { email: emailNormalizado });
+            return res.status(401).json({ error: 'Credenciales inválidas.' });
+        }
 
-        const passwordCorrecto = await bcrypt.compare(password, usuario.password);
-        if (!passwordCorrecto) return res.status(400).json({ error: "Contraseña incorrecta." });
+        const passwordCorrecto = await bcrypt.compare(password || '', usuario.password);
+        if (!passwordCorrecto) {
+            await registrarEventoSeguridad(req, 'login', 'error', 'Contraseña inválida.', {
+                usuarioId: usuario._id,
+                email: usuario.email
+            });
+            return res.status(401).json({ error: 'Credenciales inválidas.' });
+        }
+
+        const superadmin = esSuperadminEmail(usuario.email);
+        if (!superadmin && usuario.emailVerificado !== true) {
+            await registrarEventoSeguridad(req, 'login', 'bloqueado', 'Email no verificado.', {
+                usuarioId: usuario._id,
+                email: usuario.email
+            });
+            return res.status(403).json({
+                error: 'Debes verificar tu email antes de iniciar sesión.',
+                requiereVerificacionEmail: true,
+                email: usuario.email
+            });
+        }
+
+        usuario.ultimoLoginExitoso = new Date();
+        await usuario.save();
+        await registrarEventoSeguridad(req, 'login', 'ok', 'Acceso correcto.', {
+            usuarioId: usuario._id,
+            email: usuario.email
+        });
 
         res.json({
             mensaje: "Login correcto",
-            usuario: serializarUsuario(usuario)
+            usuario: serializarUsuario(usuario),
+            token: crearTokenSesion(usuario)
         });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -518,8 +1657,8 @@ app.post('/api/usuarios/login', async (req, res) => {
 app.get('/api/eventos/:id/chat', async (req, res) => {
     try {
         const { id } = req.params;
-        const viewerId = req.header('x-user-id');
-        const adminValido = await obtenerAdminValido(viewerId);
+        const viewerId = req.authUser?._id || null;
+        const adminValido = req.authUser ? await obtenerPermisoModeracion(req.authUser._id) : null;
         const evento = await Evento.findById(id).select('chatMessages chatModeration');
         if (!evento) return res.status(404).json({ error: 'Evento no encontrado.' });
         const moderacion = normalizarModeracionChat(evento.chatModeration);
@@ -530,7 +1669,7 @@ app.get('/api/eventos/:id/chat', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/eventos/:id/chat', async (req, res) => {
+app.post('/api/eventos/:id/chat', requerirSesion, async (req, res) => {
     try {
         const { id } = req.params;
         const { usuarioId, autor, texto } = req.body;
@@ -538,7 +1677,11 @@ app.post('/api/eventos/:id/chat', async (req, res) => {
         if (!usuarioId) return res.status(401).json({ error: 'Debes estar autenticado para enviar mensajes.' });
         if (!texto || texto.trim().length === 0) return res.status(400).json({ error: 'El mensaje no puede estar vacío.' });
 
-        const adminValido = await obtenerAdminValido(usuarioId);
+        if (String(req.authUser._id) !== String(usuarioId)) {
+            return res.status(403).json({ error: 'No autorizado para enviar mensajes en nombre de otro usuario.' });
+        }
+
+        const adminValido = await obtenerAdminValido(req.authUser._id);
         const eventoActual = await Evento.findById(id).select('chatModeration');
         if (!eventoActual) return res.status(404).json({ error: 'Evento no encontrado.' });
 
@@ -564,12 +1707,13 @@ app.post('/api/eventos/:id/chat', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/eventos/:id/chat/moderacion', async (req, res) => {
+app.post('/api/eventos/:id/chat/moderacion', requerirSesion, async (req, res) => {
     try {
         const { id } = req.params;
-        const adminId = req.header('x-admin-id') || req.body.adminId;
-        const adminValido = await obtenerAdminValido(adminId);
-        if (!adminValido) return res.status(403).json({ error: 'No autorizado para moderar este chat.' });
+        const adminValido = await obtenerPermisoModeracion(req.authUser._id);
+        if (!adminValido) {
+            return res.status(403).json({ error: 'Solo moderadores o superadmin pueden moderar este chat.' });
+        }
 
         const { accion, usuarioId, autor, messageId } = req.body;
         const evento = await Evento.findById(id);
@@ -626,16 +1770,16 @@ app.post('/api/eventos/:id/chat/moderacion', async (req, res) => {
         evento.chatModeration = moderacion;
         await evento.save();
 
-        res.json({ success: true, mensaje: 'Moderación aplicada correctamente.', ...construirRespuestaChat(evento, adminId, true) });
+        res.json({ success: true, mensaje: 'Moderación aplicada correctamente.', ...construirRespuestaChat(evento, adminValido._id, true) });
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
+app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async (req, res) => {
     try {
         const { id } = req.params;
-        const { colorSemaforo, descripcionPersonal, tipoUsuario, solicitudPromotor, promotorAprobado, verificacionPromotor, esAdmin } = req.body;
+        const { colorSemaforo, descripcionPersonal, tipoUsuario, solicitudPromotor, promotorAprobado, verificacionPromotor, esAdmin, pais, direccionResidencia, preferenciasPlanes } = req.body;
 
-        const requesterId = req.header('x-user-id') || req.body.requesterId;
+        const requesterId = req.authUser._id;
         const esMismoUsuario = requesterId && requesterId.toString() === id.toString();
         const adminValido = await obtenerAdminValido(requesterId);
         if (!esMismoUsuario && !adminValido) {
@@ -646,13 +1790,34 @@ app.put('/api/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
         if (!usuarioObjetivo) return res.status(404).json({ error: 'Usuario no encontrado.' });
 
         const datosActualizados = {};
-        if (colorSemaforo) datosActualizados.colorSemaforo = colorSemaforo;
-        if (descripcionPersonal) datosActualizados.descripcionPersonal = descripcionPersonal;
+        if (colorSemaforo) datosActualizados.colorSemaforo = limpiarTexto(colorSemaforo, 20);
+        if (descripcionPersonal !== undefined) datosActualizados.descripcionPersonal = limpiarTexto(descripcionPersonal, 400);
+        if (pais !== undefined) {
+            if (!validarPaisCodigo(pais)) {
+                return res.status(400).json({ error: 'Debes seleccionar un país válido de la lista.' });
+            }
+            datosActualizados.pais = String(pais).toUpperCase();
+        }
+        if (direccionResidencia !== undefined) {
+            const direccionNormalizada = normalizarDireccionSeleccionada(direccionResidencia);
+            if (!direccionNormalizada) {
+                return res.status(400).json({ error: 'Debes seleccionar una dirección válida desde las sugerencias.' });
+            }
+            datosActualizados.direccionResidencia = direccionNormalizada;
+            datosActualizados.localidad = direccionNormalizada.displayName;
+            datosActualizados.nacionalidad = direccionNormalizada.countryName || datosActualizados.nacionalidad || '';
+        }
+        if (preferenciasPlanes !== undefined) {
+            datosActualizados.preferenciasPlanes = normalizarListaOpciones(preferenciasPlanes, PLAN_PREFERENCIAS_PERMITIDAS);
+        }
         if (tipoUsuario) {
             if (!adminValido && !esMismoUsuario) return res.status(403).json({ error: 'No autorizado para cambiar tipo de usuario.' });
             datosActualizados.tipoUsuario = tipoUsuario;
+            if (tipoUsuario === 'PROMOTOR' && verificacionPromotor === undefined && !adminValido) {
+                return res.status(400).json({ error: 'Debes completar la verificación para activar cuenta promotor.' });
+            }
         }
-        if (solicitudPromotor !== undefined) datosActualizados.solicitudPromotor = solicitudPromotor;
+        if (solicitudPromotor !== undefined) datosActualizados.solicitudPromotor = limpiarTexto(solicitudPromotor, 500);
         if (promotorAprobado !== undefined) {
             if (!adminValido) return res.status(403).json({ error: 'Solo el superadmin puede aprobar o denegar promotores.' });
             datosActualizados.promotorAprobado = promotorAprobado === 'true' || promotorAprobado === true;
@@ -667,10 +1832,27 @@ app.put('/api/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
                 datosActualizados.esAdmin = false;
             }
         }
+        let verificacionPromotorSanitizada = null;
         if (verificacionPromotor !== undefined) {
-            datosActualizados.verificacionPromotor = typeof verificacionPromotor === 'string'
+            verificacionPromotorSanitizada = typeof verificacionPromotor === 'string'
                 ? JSON.parse(verificacionPromotor)
                 : verificacionPromotor;
+            if ((tipoUsuario === 'PROMOTOR' || datosActualizados.tipoUsuario === 'PROMOTOR') && !verificacionPromotorCompleta(verificacionPromotorSanitizada || {})) {
+                return res.status(400).json({ error: 'Para activar perfil promotor debes completar la verificación.' });
+            }
+            datosActualizados.verificacionPromotor = {
+                tipoPromotorLegal: limpiarTexto(verificacionPromotorSanitizada?.tipoPromotorLegal || 'EMPRESA', 20),
+                nombreComercial: limpiarTexto(verificacionPromotorSanitizada?.nombreComercial, 160),
+                nifCif: limpiarTexto(verificacionPromotorSanitizada?.nifCif, 60),
+                cargo: limpiarTexto(verificacionPromotorSanitizada?.cargo, 120),
+                telefonoProfesional: limpiarTexto(verificacionPromotorSanitizada?.telefonoProfesional, 40),
+                webRedSocial: limpiarTexto(verificacionPromotorSanitizada?.webRedSocial, 240),
+                ciudadesOperacion: limpiarTexto(verificacionPromotorSanitizada?.ciudadesOperacion, 240),
+                tipoEventos: limpiarTexto(verificacionPromotorSanitizada?.tipoEventos, 240),
+                frecuenciaEventos: limpiarTexto(verificacionPromotorSanitizada?.frecuenciaEventos, 80),
+                enlacePrueba: limpiarTexto(verificacionPromotorSanitizada?.enlacePrueba, 240),
+                declaracionVeracidad: verificacionPromotorSanitizada?.declaracionVeracidad === true
+            };
         }
         if (esSuperadminEmail(usuarioObjetivo.email)) {
             datosActualizados.esAdmin = true;
@@ -694,10 +1876,13 @@ app.put('/api/usuarios/:id', upload.single('fotoPerfil'), async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/usuarios/:id/valoracion', async (req, res) => {
+app.put('/api/usuarios/:id/valoracion', requerirSesion, async (req, res) => {
     try {
         const { id } = req.params;
         const { eventoId, estrellas, comentario } = req.body;
+        if (String(req.authUser._id) !== String(id)) {
+            return res.status(403).json({ error: 'No autorizado para valorar con otro usuario.' });
+        }
         if (!eventoId) return res.status(400).json({ error: 'Falta el ID del evento.' });
         if (!estrellas || estrellas < 1 || estrellas > 5) return res.status(400).json({ error: 'Las estrellas deben estar entre 1 y 5.' });
 
@@ -715,6 +1900,16 @@ app.put('/api/usuarios/:id/valoracion', async (req, res) => {
         await usuario.save();
         res.json({ success: true, mensaje: 'Valoración guardada.', valoraciones: usuario.valoraciones });
     } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: `Error en la subida de archivos: ${err.message}` });
+    }
+    if (err && err.message && (err.message.includes('archivo no permitido') || err.message.includes('audio no permitido') || err.message.includes('Formato'))) {
+        return res.status(400).json({ error: err.message });
+    }
+    return next(err);
 });
 
 app.listen(PORT, () => {

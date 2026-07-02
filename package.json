@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "secure:setup": "node scripts/bootstrap-security.js",
+    "secure:check": "node scripts/security-doctor.js",
+    "secure:reset": "node scripts/bootstrap-security.js --force",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -18,10 +21,14 @@
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "express-rate-limit": "^7.4.0",
     "express": "^5.2.1",
     "fast-xml-parser": "^5.9.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
     "mongodb": "^7.4.0",
     "mongoose": "^9.7.0",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.3"
   }
 }

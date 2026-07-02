@@ -451,6 +451,55 @@ body { background-color: var(--bg-main); color: var(--text-main); padding: 20px;
     border-color: #a78bfa;
     box-shadow: 0 0 0 4px rgba(167, 139, 250, 0.12);
 }
+.preferencias-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+.preferencia-chip {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 14px !important;
+    margin-bottom: 0 !important;
+    border: 1px solid rgba(148, 163, 184, 0.22) !important;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.92) !important;
+    cursor: pointer;
+}
+.preferencia-chip input {
+    width: auto;
+    margin: 0;
+}
+.preferencia-chip span {
+    color: #f8fafc;
+    font-size: 0.9rem;
+    line-height: 1.2;
+}
+.direccion-sugerencias {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+    max-height: 240px;
+    overflow: auto;
+}
+.direccion-sugerencia {
+    width: 100%;
+    text-align: left;
+    background: rgba(15, 23, 42, 0.96);
+    color: #f8fafc;
+    border: 1px solid rgba(79, 70, 229, 0.32);
+    border-radius: 14px;
+    padding: 12px 14px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1.35;
+}
+.direccion-sugerencia:hover {
+    border-color: #a78bfa;
+    background: rgba(30, 41, 59, 0.98);
+}
 .modal button,
 .modal .btn-interaccion,
 .modal .btn-record,
@@ -993,6 +1042,284 @@ body { background-color: var(--bg-main); color: var(--text-main); padding: 20px;
     background: linear-gradient(180deg, #111827 0%, #161d3d 100%);
     border: 1px solid rgba(236, 72, 153, 0.4);
     box-shadow: 0 32px 80px rgba(79, 70, 229, 0.35);
+}
+
+.social-shell {
+    display: grid;
+    gap: 18px;
+}
+.social-hero {
+    display: grid;
+    gap: 14px;
+    padding: 20px 22px;
+    border-radius: 22px;
+    background: radial-gradient(circle at top left, rgba(236,72,153,0.16), transparent 35%),
+                linear-gradient(135deg, rgba(15,23,42,0.96), rgba(30,41,59,0.92));
+    border: 1px solid rgba(99,102,241,0.22);
+    box-shadow: 0 18px 48px rgba(15,23,42,0.32);
+}
+.social-kicker {
+    color: #f472b6;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    margin-bottom: 8px;
+}
+.social-hero h3 {
+    margin: 0;
+    font-size: 1.6rem;
+    color: #f8fafc;
+}
+.social-hero p {
+    color: #cbd5e1;
+    line-height: 1.5;
+}
+.social-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+.social-stat-card {
+    padding: 14px;
+    border-radius: 16px;
+    background: rgba(15,23,42,0.7);
+    border: 1px solid rgba(148,163,184,0.16);
+    display: grid;
+    gap: 4px;
+}
+.social-stat-card strong {
+    font-size: 1.1rem;
+    color: #fff;
+}
+.social-stat-card span {
+    color: #94a3b8;
+    font-size: 0.82rem;
+}
+.social-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.social-tabs button,
+.social-side-button,
+.social-feed-header button,
+.social-story-actions button {
+    border: none;
+    cursor: pointer;
+    font-weight: 800;
+    transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+}
+.social-tabs button {
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(15,23,42,0.72);
+    color: #cbd5e1;
+    border: 1px solid rgba(148,163,184,0.16);
+}
+.social-tabs button.active {
+    background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 52%, #4f46e5 100%);
+    color: white;
+    border-color: transparent;
+    box-shadow: 0 12px 28px rgba(79,70,229,0.22);
+}
+.social-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.8fr);
+    gap: 16px;
+    align-items: start;
+}
+.social-main-panel,
+.social-side-panel {
+    display: grid;
+    gap: 14px;
+}
+.social-feed-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.social-feed-header h4 {
+    margin: 0;
+    color: #fff;
+}
+.social-feed-header p {
+    color: #94a3b8;
+    margin-top: 4px;
+}
+.social-feed-header button,
+.social-side-button,
+.social-story-actions button {
+    padding: 10px 14px;
+    border-radius: 14px;
+    color: white;
+    background: linear-gradient(135deg, #4f46e5 0%, #8b5cf6 100%);
+    box-shadow: 0 12px 24px rgba(79,70,229,0.18);
+}
+.social-side-button {
+    width: 100%;
+    margin-bottom: 8px;
+}
+.social-feed-list,
+.social-people-list,
+.social-notifications-list {
+    display: grid;
+    gap: 12px;
+}
+.social-story-card {
+    padding: 18px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.84));
+    border: 1px solid rgba(99,102,241,0.18);
+    box-shadow: 0 18px 40px rgba(15,23,42,0.28);
+    display: grid;
+    gap: 14px;
+}
+.social-story-top {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 12px;
+    align-items: center;
+}
+.social-story-avatar,
+.social-person-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,0.12);
+}
+.social-story-top strong,
+.social-person-main strong {
+    color: #fff;
+}
+.social-story-top p,
+.social-person-main p {
+    color: #94a3b8;
+    font-size: 0.88rem;
+}
+.social-story-time {
+    color: #64748b;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+.social-story-body {
+    display: grid;
+    gap: 10px;
+}
+.social-story-badge {
+    width: fit-content;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.social-pill-evento { background: rgba(79,70,229,0.16); color: #c7d2fe; }
+.social-pill-amistad { background: rgba(236,72,153,0.16); color: #f9a8d4; }
+.social-pill-seguir { background: rgba(16,185,129,0.16); color: #6ee7b7; }
+.social-story-body p {
+    color: #e2e8f0;
+    line-height: 1.55;
+}
+.social-story-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.social-person-card,
+.social-notification-card {
+    padding: 18px;
+    border-radius: 18px;
+    background: rgba(15,23,42,0.9);
+    border: 1px solid rgba(148,163,184,0.16);
+    box-shadow: 0 12px 28px rgba(15,23,42,0.24);
+}
+.social-person-main {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    align-items: center;
+}
+.social-person-meta {
+    margin-top: 10px;
+    color: #a78bfa;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.social-person-actions {
+    justify-content: flex-start;
+    margin-top: 12px;
+}
+.social-notification-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    align-items: start;
+}
+.social-notification-card.unread {
+    border-color: rgba(79,70,229,0.45);
+    box-shadow: 0 12px 28px rgba(79,70,229,0.16);
+}
+.social-notification-card small {
+    color: #94a3b8;
+}
+.social-notification-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    margin-top: 4px;
+    background: linear-gradient(135deg, #f472b6 0%, #4f46e5 100%);
+}
+.social-empty-state {
+    padding: 22px;
+    border-radius: 18px;
+    border: 1px dashed rgba(148,163,184,0.28);
+    color: #cbd5e1;
+    background: rgba(15,23,42,0.45);
+}
+.social-empty-state strong {
+    display: block;
+    color: #fff;
+    margin-bottom: 6px;
+}
+.social-mini-summary {
+    display: grid;
+    gap: 10px;
+}
+.social-mini-summary span {
+    display: flex;
+    justify-content: space-between;
+    color: #cbd5e1;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(15,23,42,0.72);
+    border: 1px solid rgba(148,163,184,0.16);
+}
+
+@media (max-width: 1080px) {
+    .social-layout,
+    .social-stats-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 820px) {
+    .social-layout,
+    .social-stats-grid {
+        grid-template-columns: 1fr;
+    }
+    .social-story-top {
+        grid-template-columns: auto 1fr;
+    }
+    .social-story-time {
+        grid-column: 1 / -1;
+    }
 }
 .perfil-filtros {
     display: flex;

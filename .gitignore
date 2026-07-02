@@ -6,3 +6,5 @@ yarn-debug.log*
 yarn-error.log*
 uploads/*
 !uploads/.gitkeep
+admin/*.txt
+!admin/README_SEGURIDAD.txt

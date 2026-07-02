@@ -85,8 +85,11 @@
                     <span id="lblPromotorStatus" style="margin-left: 4px; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; display:none; background:#4f46e5; color:#fff;">PROMOTOR</span>
                 </div>
                 <div style="display:flex; gap:8px; flex-wrap: wrap; justify-content:flex-end;">
-                    <button id="btnPerfilMenu" onclick="abrirModalPerfilMenu()" style="background:#2563eb; color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:0.8rem;">👤 Mi perfil ▾</button>
-                    <button id="btnEditarPerfil" onclick="abrirModalEditarPerfil()" style="background:#4f46e5; color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:0.8rem;">⚙️ Perfil</button>
+                    <button id="btnPerfilMenu" onclick="abrirModalPerfilMenu()" style="background:#2563eb; color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:0.8rem; display:inline-flex; align-items:center; gap:8px;">
+                        <span>👤 Mi perfil ▾</span>
+                        <span id="btnPerfilMenuBadge" style="display:none; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#ef4444; color:white; font-size:0.7rem; font-weight:800; line-height:18px; text-align:center;">0</span>
+                    </button>
+                    <button id="btnEditarPerfil" onclick="abrirModalEditarPerfil()" style="background:#4f46e5; color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:0.8rem;">⚙️ Ajustes</button>
                     <button id="btnLogout" style="background:#ef4444; color:white; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:0.8rem;">Cerrar sesión</button>
                 </div>
             </div>
@@ -186,10 +189,12 @@
             <div style="display:flex; justify-content:space-between; align-items:center; gap: 20px; flex-wrap: wrap; margin-bottom: 18px;">
                 <div>
                     <h2 style="margin:0; color:white;">Mi espacio Plandem</h2>
-                    <p style="margin:6px 0 0; color:var(--text-muted);">Accede a tus eventos guardados, asistidos y valoraciones en un solo lugar.</p>
+                    <p style="margin:6px 0 0; color:var(--text-muted);">Accede a tu muro social, personas, alertas, eventos guardados y valoraciones en un solo lugar.</p>
                 </div>
                 <div style="display:flex; gap:10px; flex-wrap: wrap;">
                     <button class="perfil-tab" onclick="mostrarSeccionPerfil('editar')">Editar info</button>
+                    <button class="perfil-tab" onclick="mostrarSeccionPerfil('social')">Red social</button>
+                    <button class="perfil-tab" onclick="mostrarSeccionPerfil('chats')">Tus chats activos</button>
                     <button class="perfil-tab" onclick="mostrarSeccionPerfil('favoritos')">Me gusta</button>
                     <button class="perfil-tab" onclick="mostrarSeccionPerfil('asistidos')">Asistidos</button>
                     <button class="perfil-tab" onclick="mostrarSeccionPerfil('valoraciones')">Valoraciones</button>
@@ -229,21 +234,39 @@
             <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #334155;">
                 <button onclick="cambiarPestanaAuth('login')" id="btnTabLogin" style="flex:1; background:#4f46e5; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer;">Iniciar Sesión</button>
                 <button onclick="cambiarPestanaAuth('registro')" id="btnTabRegistro" style="flex:1; background:transparent; color:white; border:1px solid #475569; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer;">Crear Cuenta</button>
+                <button onclick="cambiarPestanaAuth('verificar')" id="btnTabVerificar" style="flex:1; display:none; background:transparent; color:white; border:1px solid #475569; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer;">Verificar Email</button>
             </div>
 
             <form id="formLogin">
                 <input type="text" id="loginEmail" placeholder="Correo Electrónico o Usuario Administrador" required>
                 <input type="password" id="loginPassword" placeholder="Contraseña" required>
-                <button type="submit" style="width:100%; background:#10b981; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold;">Entrar en Tándem</button>
+                <button type="submit" style="width:100%; background:#10b981; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold;">Entrar en Plandem</button>
+            </form>
+
+            <form id="formVerificarEmail" style="display:none;">
+                <input type="email" id="verifEmail" placeholder="Correo Electrónico" required>
+                <input type="text" id="verifCodigo" placeholder="Código de 6 dígitos" minlength="6" maxlength="6" inputmode="numeric" required>
+                <button type="submit" style="width:100%; background:#06b6d4; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold;">Verificar y Activar Cuenta</button>
+                <button type="button" id="btnReenviarCodigo" style="width:100%; margin-top:8px; background:#334155; color:white; padding:10px; border-radius:8px; border:none; font-weight:bold; cursor:pointer;">Reenviar código</button>
             </form>
 
             <form id="formRegistro" style="display: none;">
                 <input type="text" id="regNombre" placeholder="Nombre completo" required>
                 <input type="email" id="regEmail" placeholder="Correo Electrónico" required>
-                <input type="password" id="regPassword" placeholder="Contraseña (Mínimo 6 caracteres)" required>
-                <input type="date" id="regFechaNac" required>
-                <input type="text" id="regNacionalidad" placeholder="Nacionalidad">
-                <input type="text" id="regLocalidad" placeholder="Localidad de residencia">
+                <input type="password" id="regPassword" placeholder="Contraseña segura (mín. 10, mayúscula, minúscula, número y símbolo)" required>
+                <label for="regFechaNac" style="display:block; color:#e2e8f0; font-size:0.85rem; margin:2px 0 6px;">Fecha de nacimiento (solo mayores de 18 años)</label>
+                <input type="date" id="regFechaNac" aria-label="Fecha de nacimiento" title="Fecha de nacimiento" required>
+                <select id="regPais" required style="margin-bottom: 15px;"></select>
+                <div style="margin-bottom: 15px;">
+                    <label for="regDireccionBusqueda" style="display:block; color:#e2e8f0; font-size:0.85rem; margin:2px 0 6px;">Dirección de residencia</label>
+                    <input type="search" id="regDireccionBusqueda" placeholder="Escribe calle, número o lugar y elige una sugerencia" autocomplete="off">
+                    <div id="regDireccionSugerencias" class="direccion-sugerencias"></div>
+                    <input type="hidden" id="regDireccionResidencia">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display:block; color:#e2e8f0; font-size:0.85rem; margin:2px 0 6px;">Planes que te gustan</label>
+                    <div id="regPreferenciasPlanes" class="preferencias-grid"></div>
+                </div>
                 
                 <select id="regEstadoCivil">
                     <option value="Soltero/a">🟢 Soltero/a</option>
@@ -357,6 +380,18 @@
                     <option value="ROJO">🔴 Rojo (Cerrado)</option>
                 </select>
 
+                <select id="perfilPais" required style="margin-bottom: 15px;"></select>
+                <div style="margin-bottom: 15px;">
+                    <label for="perfilDireccionBusqueda" style="display:block; color:#e2e8f0; font-size:0.85rem; margin:2px 0 6px;">Dirección de residencia</label>
+                    <input type="search" id="perfilDireccionBusqueda" placeholder="Escribe calle, número o lugar y elige una sugerencia" autocomplete="off">
+                    <div id="perfilDireccionSugerencias" class="direccion-sugerencias"></div>
+                    <input type="hidden" id="perfilDireccionResidencia">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display:block; color:#e2e8f0; font-size:0.85rem; margin:2px 0 6px;">Planes que te gustan</label>
+                    <div id="perfilPreferenciasPlanes" class="preferencias-grid"></div>
+                </div>
+
                 <label style="color: white; font-weight: bold; display: block; margin-bottom: 8px;">Descripción Personal (Opcional)</label>
                 <textarea id="perfilDescripcion" placeholder="Cuéntanos sobre ti..." rows="3" style="margin-bottom: 15px;"></textarea>
 
@@ -381,12 +416,13 @@
                 <input type="text" id="capacidad" placeholder="Capacidad estimada (personas)">
                 <input type="url" id="enlaceVenta" placeholder="Enlace de compra o sitio web promocional">
                 <textarea id="datosExtra" placeholder="Información extra: edad mínima, normas, consumos, precios VIP, etc." rows="3" style="margin-bottom: 12px;"></textarea>
-                <div style="display:flex; gap:6px; margin-bottom:12px; flex-wrap: wrap;">
-                    <input type="text" id="inputBuscar" placeholder="Dirección..." style="flex:1; min-width:180px;">
-                    <button type="button" onclick="buscarDireccion()" style="background:#000; color:#fff; padding:0 10px; border-radius:8px;">Buscar</button>
+                <div style="margin-bottom:12px;">
+                    <label for="inputBuscar" style="display:block; color:#e2e8f0; font-size:0.85rem; margin:2px 0 6px;">Dirección del evento</label>
+                    <input type="search" id="inputBuscar" placeholder="Escribe calle, número o lugar y elige una sugerencia" autocomplete="off">
+                    <div id="direccionSugerenciasEvento" class="direccion-sugerencias"></div>
                 </div>
                 <div id="map" style="height: 220px; border-radius: 16px; overflow: hidden; margin-bottom: 12px;"></div>
-                <input type="hidden" id="direccion"><input type="hidden" id="latitud"><input type="hidden" id="longitud">
+                <input type="hidden" id="direccion"><input type="hidden" id="latitud"><input type="hidden" id="longitud"><input type="hidden" id="direccionEventoSeleccionada">
                 <input type="file" id="multimedia" accept="image/*,video/*" style="margin-bottom: 12px;">
                 <label style="color: white; display: block; margin-bottom: 8px;">Galería promocional (fotos/videos)</label>
                 <input type="file" id="galeria" accept="image/*,video/*" multiple style="margin-bottom: 12px;">
@@ -424,7 +460,11 @@
             <h3 style="color:white; margin-bottom:10px;">Panel de control de promotores</h3>
             <p style="color:var(--text-muted); margin-bottom:16px;">Como administrador puedes aprobar, denegar o revocar acceso a promotores.</p>
             <form id="formCrearPromotorAdmin" style="margin-bottom:16px; background:#0f172a; border:1px solid #334155; border-radius:12px; padding:12px;">
-                <p style="margin:0 0 10px; color:#f8fafc; font-weight:700;">Crear perfil de promotor manual</p>
+                <p style="margin:0 0 10px; color:#f8fafc; font-weight:700;">Crear perfil especial manual</p>
+                <select id="adminPromotorTipoPerfil">
+                    <option value="PROMOTOR">Perfil de promotor</option>
+                    <option value="MODERADOR">Perfil de moderador</option>
+                </select>
                 <input type="text" id="adminPromotorNombre" placeholder="Nombre del promotor" required>
                 <input type="email" id="adminPromotorEmail" placeholder="Email del promotor" required>
                 <input type="password" id="adminPromotorPassword" placeholder="Contraseña temporal" required>

@@ -13,13 +13,264 @@ let temporizadorBarraProgreso = null;
 let eventoPendienteChatConsent = null;
 let perfilSeccionActual = 'favoritos';
 let perfilFiltroActual = 'todos';
+let tokenSesion = null;
+let emailPendienteVerificacion = '';
+let redSocialUsuarios = [];
+let redSocialNotificaciones = [];
+let redSocialMuro = [];
+let redSocialBusqueda = '';
+let redSocialVista = 'muro';
 const TIEMPO_EXPOSICION = 15000;
 const chatVentanasActivas = {};
 const WHATSAPP_PROMOTOR_NUMERO = '34643435797';
+const PAISES_OPCIONES = [
+    { code: 'ES', name: 'España' },
+    { code: 'PT', name: 'Portugal' },
+    { code: 'FR', name: 'Francia' },
+    { code: 'IT', name: 'Italia' },
+    { code: 'AD', name: 'Andorra' },
+    { code: 'DE', name: 'Alemania' },
+    { code: 'GB', name: 'Reino Unido' },
+    { code: 'IE', name: 'Irlanda' },
+    { code: 'NL', name: 'Países Bajos' },
+    { code: 'BE', name: 'Bélgica' },
+    { code: 'CH', name: 'Suiza' },
+    { code: 'AT', name: 'Austria' },
+    { code: 'SE', name: 'Suecia' },
+    { code: 'NO', name: 'Noruega' },
+    { code: 'DK', name: 'Dinamarca' },
+    { code: 'US', name: 'Estados Unidos' },
+    { code: 'CA', name: 'Canadá' },
+    { code: 'MX', name: 'México' },
+    { code: 'AR', name: 'Argentina' },
+    { code: 'CO', name: 'Colombia' },
+    { code: 'PE', name: 'Perú' },
+    { code: 'CL', name: 'Chile' },
+    { code: 'UY', name: 'Uruguay' },
+    { code: 'EC', name: 'Ecuador' },
+    { code: 'BO', name: 'Bolivia' },
+    { code: 'CR', name: 'Costa Rica' },
+    { code: 'PA', name: 'Panamá' },
+    { code: 'PR', name: 'Puerto Rico' },
+    { code: 'VE', name: 'Venezuela' },
+    { code: 'DO', name: 'República Dominicana' },
+    { code: 'GT', name: 'Guatemala' },
+    { code: 'SV', name: 'El Salvador' },
+    { code: 'HN', name: 'Honduras' },
+    { code: 'NI', name: 'Nicaragua' },
+    { code: 'PY', name: 'Paraguay' },
+    { code: 'BR', name: 'Brasil' },
+    { code: 'AU', name: 'Australia' },
+    { code: 'NZ', name: 'Nueva Zelanda' }
+];
+const PLANES_OPCIONES = [
+    'Musica en vivo',
+    'Festivales',
+    'Gastronomia',
+    'Deporte',
+    'Cultura',
+    'Ocio nocturno',
+    'Aire libre',
+    'Familia',
+    'Bienestar',
+    'Tecnologia',
+    'Arte y talleres',
+    'Viajes',
+    'Networking',
+    'Eventos premium'
+];
+
+function obtenerHeadersAutenticacion(extraHeaders = {}) {
+    const headers = { ...extraHeaders };
+    if (tokenSesion) {
+        headers.Authorization = `Bearer ${tokenSesion}`;
+    }
+    return headers;
+}
+
+function escaparHtml(valor = '') {
+    return String(valor)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function actualizarBadgeNotificacionesSociales() {
+    const badge = document.getElementById('btnPerfilMenuBadge');
+    if (!badge) return;
+    const user = usuarioConectado || {};
+    const notificaciones = redSocialNotificaciones.length > 0 ? redSocialNotificaciones : (user.notificacionesSociales || []);
+    const noLeidas = notificaciones.filter((item) => !item.leida).length;
+    if (noLeidas > 0) {
+        badge.style.display = 'inline-flex';
+        badge.textContent = noLeidas > 99 ? '99+' : String(noLeidas);
+    } else {
+        badge.style.display = 'none';
+        badge.textContent = '0';
+    }
+}
+
+function inicializarSelectPaises(idSelect, seleccionado = '') {
+    const select = document.getElementById(idSelect);
+    if (!select) return;
+    select.innerHTML = '<option value="">Selecciona tu país</option>';
+    PAISES_OPCIONES.forEach((pais) => {
+        const option = document.createElement('option');
+        option.value = pais.code;
+        option.textContent = pais.name;
+        if (pais.code === seleccionado) option.selected = true;
+        select.appendChild(option);
+    });
+}
+
+function crearSlug(valor) {
+    return String(valor || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-');
+}
+
+function inicializarPlanesFormulario(prefijo, seleccionadas = []) {
+    const contenedor = document.getElementById(`${prefijo}PreferenciasPlanes`);
+    if (!contenedor) return;
+    const seleccion = new Set((seleccionadas || []).map((item) => String(item)));
+    contenedor.innerHTML = '';
+    PLANES_OPCIONES.forEach((plan) => {
+        const id = `${prefijo}Plan-${crearSlug(plan)}`;
+        const etiqueta = document.createElement('label');
+        etiqueta.className = 'preferencia-chip';
+        etiqueta.setAttribute('for', id);
+        etiqueta.innerHTML = `
+            <input type="checkbox" id="${id}" value="${plan}">
+            <span>${plan}</span>
+        `;
+        contenedor.appendChild(etiqueta);
+        const input = etiqueta.querySelector('input');
+        input.checked = seleccion.has(plan);
+    });
+}
+
+function obtenerPlanesSeleccionadosFormulario(prefijo) {
+    const contenedor = document.getElementById(`${prefijo}PreferenciasPlanes`);
+    if (!contenedor) return [];
+    return Array.from(contenedor.querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+}
+
+function actualizarDireccionSeleccionada(prefijo, sugerencia) {
+    const hidden = document.getElementById(`${prefijo}DireccionResidencia`);
+    const input = document.getElementById(`${prefijo}DireccionBusqueda`);
+    if (!hidden || !input) return;
+    hidden.value = JSON.stringify(sugerencia);
+    input.value = sugerencia.displayName || '';
+    const contenedor = document.getElementById(`${prefijo}DireccionSugerencias`);
+    if (contenedor) contenedor.innerHTML = '';
+}
+
+function obtenerDireccionSeleccionadaFormulario(prefijo) {
+    const hidden = document.getElementById(`${prefijo}DireccionResidencia`);
+    if (!hidden || !hidden.value) return null;
+    try {
+        return JSON.parse(hidden.value);
+    } catch (error) {
+        return null;
+    }
+}
+
+function configurarAutocompleteDireccion(prefijo) {
+    const input = document.getElementById(`${prefijo}DireccionBusqueda`);
+    const contenedor = document.getElementById(`${prefijo}DireccionSugerencias`);
+    const hidden = document.getElementById(`${prefijo}DireccionResidencia`);
+    if (!input || !contenedor || !hidden) return;
+
+    let temporizador = null;
+    const limpiarSugerencias = () => {
+        contenedor.innerHTML = '';
+    };
+
+    input.addEventListener('input', () => {
+        hidden.value = '';
+        limpiarSugerencias();
+        const query = input.value.trim();
+        if (query.length < 3) return;
+
+        clearTimeout(temporizador);
+        temporizador = setTimeout(async () => {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    limpiarSugerencias();
+                    return;
+                }
+                contenedor.innerHTML = data.map((item) => {
+                    const countryCode = String(item.address?.country_code || '').toUpperCase();
+                    const countryName = item.address?.country || '';
+                    const payload = encodeURIComponent(JSON.stringify({
+                        placeId: item.place_id,
+                        displayName: item.display_name,
+                        latitud: Number(item.lat),
+                        longitud: Number(item.lon),
+                        countryCode,
+                        countryName
+                    }));
+                    return `<button type="button" class="direccion-sugerencia" data-json="${payload}">${item.display_name}</button>`;
+                }).join('');
+
+                contenedor.querySelectorAll('.direccion-sugerencia').forEach((boton) => {
+                    boton.addEventListener('click', () => {
+                        const raw = boton.getAttribute('data-json') || '';
+                        if (!raw) return;
+                        const parsed = JSON.parse(decodeURIComponent(raw));
+                        actualizarDireccionSeleccionada(prefijo, parsed);
+                    });
+                });
+            } catch (error) {
+                console.error('Error buscando dirección sugerida:', error);
+            }
+        }, 300);
+    });
+
+    input.addEventListener('blur', () => {
+        setTimeout(() => {
+            if (!hidden.value) {
+                limpiarSugerencias();
+            }
+        }, 150);
+    });
+}
+
+function calcularEdad(fechaISO) {
+    if (!fechaISO) return 0;
+    const nacimiento = new Date(fechaISO);
+    if (Number.isNaN(nacimiento.getTime())) return 0;
+    const hoy = new Date();
+    let edad = hoy.getFullYear() - nacimiento.getFullYear();
+    const mes = hoy.getMonth() - nacimiento.getMonth();
+    if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) {
+        edad -= 1;
+    }
+    return edad;
+}
+
+function esMayorDeEdad(fechaISO, edadMinima = 18) {
+    return calcularEdad(fechaISO) >= edadMinima;
+}
 
 function esSuperAdmin() {
     if (!usuarioConectado) return false;
     return usuarioConectado.esAdmin === true;
+}
+
+function esModerador() {
+    if (!usuarioConectado) return false;
+    return usuarioConectado.esModerador === true;
+}
+
+function puedeGestionarEventos() {
+    return esSuperAdmin() || esModerador();
 }
 
 function tieneAccesoPromotor() {
@@ -120,7 +371,9 @@ function inicializarMapaGlobal() {
 }
 
 async function cargarPortal() {
-    const res = await fetch(`${API_BASE}/api/eventos`);
+    const res = await fetch(`${API_BASE}/api/eventos`, {
+        headers: obtenerHeadersAutenticacion()
+    });
     todosLosEventos = await res.json();
     eventosPremiumTinder = todosLosEventos.filter(ev => ev.esPremium === true);
     renderizarListaYMapa();
@@ -180,9 +433,9 @@ function renderizarListaYMapa() {
             audiosHTML = '<p style="color:var(--text-muted); font-size:0.75rem;">Sin audios del ambiente aún.</p>';
         }
         const esOrganizador = usuarioConectado && usuarioConectado.nombre.trim().toLowerCase() === ev.organizador.trim().toLowerCase();
-        const esSuperAdmin = usuarioConectado && (usuarioConectado.nombre.trim().toLowerCase() === 'plandem' || usuarioConectado.nombre.trim().toLowerCase() === 'tandem');
-        const botonGrabarHTML = (esOrganizador || esSuperAdmin)
-            ? `<button class="btn-record" id="recBtn-${ev._id}" onclick="alternarGrabacion('${ev._id}')">🎤 Grabar Ambiente ${esSuperAdmin ? '(SúperAdmin)' : ''}</button>`
+        const esSuperAdminLocal = esSuperAdmin();
+        const botonGrabarHTML = (esOrganizador || esSuperAdminLocal)
+            ? `<button class="btn-record" id="recBtn-${ev._id}" onclick="alternarGrabacion('${ev._id}')">🎤 Grabar Ambiente ${esSuperAdminLocal ? '(SúperAdmin)' : ''}</button>`
             : `<span style="font-size:0.75rem; color:var(--premium-gold); cursor:pointer; font-weight:500;" onclick="abrirModalAuth()">¿Quieres escuchar el ambiente del evento? ¡Regístrate!</span>`;
         div.innerHTML = `
             ${imgPortadaHTML}
@@ -321,11 +574,15 @@ function abrirModalDetalle(idEvento) {
         `;
     }
     const esOrganizador = usuarioConectado && usuarioConectado.nombre.trim().toLowerCase() === ev.organizador.trim().toLowerCase();
-    const esSuperAdmin = usuarioConectado && (usuarioConectado.nombre.trim().toLowerCase() === 'plandem' || usuarioConectado.nombre.trim().toLowerCase() === 'tandem');
+    const esSuperAdminLocal = esSuperAdmin();
+    const esModeradorLocal = esModerador();
     let botonEditarHTML = '';
-    if (esOrganizador || esSuperAdmin) {
+    if (esOrganizador || esSuperAdminLocal || esModeradorLocal) {
         botonEditarHTML = `<button class="btn-interaccion" style="background:#4f46e5; margin-top: 15px; width: 100%; border-radius: 8px;" onclick="abrirModalEditar('${ev._id}')">📝 Editar Detalles y Multimedia</button>`;
     }
+    const botonBorrarHTML = (esSuperAdminLocal || esModeradorLocal)
+        ? `<button class="btn-interaccion" style="background:#ef4444; margin-top: 10px; width: 100%; border-radius: 8px;" onclick="borrarEvento('${ev._id}')">🗑️ Borrar evento</button>`
+        : '';
     contenedorModal.innerHTML = `
         <h2 style="color:white; margin-bottom:10px; font-size:1.6rem;">${ev.titulo}</h2>
         <span style="background:#4f46e5; font-size:0.75rem; padding:4px 10px; border-radius:8px; font-weight:bold; display:inline-block; margin-bottom:15px;">${ev.categoria}</span>
@@ -343,6 +600,7 @@ function abrirModalDetalle(idEvento) {
             <button class="btn-interaccion btn-asistire" ${estaDeshabilitado ? 'disabled' : ''} onclick="ejecutarInteraccionDetalle('${ev._id}', 'ASISTIRE')">✅ Asistiré</button>
         </div>
         ${botonEditarHTML}
+        ${botonBorrarHTML}
         ${estaDeshabilitado ? `<p style="text-align:center; font-size:0.8rem; color:var(--premium-gold); margin-top:10px; font-weight:bold;">⚠️ Inicia sesión para interactuar con este plan e ingresar al chat grupal.</p>` : ''}
     `;
     document.getElementById('modalDetalleEvento').style.display = 'block';
@@ -363,6 +621,33 @@ function abrirModalEditar(idEvento) {
     if (contenedorMedia.innerHTML === '') contenedorMedia.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; padding:5px;">No hay archivos cargados en este evento.</p>';
     cerrarModalDetalle();
     document.getElementById('modalEditarEvento').style.display = 'block';
+}
+
+async function borrarEvento(idEvento) {
+    if (!puedeGestionarEventos()) {
+        alert('No tienes permisos para borrar eventos.');
+        return;
+    }
+    if (!confirm('¿Seguro que quieres borrar este evento? Esta acción no se puede deshacer.')) {
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/eventos/${idEvento}`, {
+            method: 'DELETE',
+            headers: obtenerHeadersAutenticacion({ 'Content-Type': 'application/json' })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || 'No se pudo borrar el evento.');
+            return;
+        }
+        cerrarModalDetalle();
+        await cargarPortal();
+        alert(data.mensaje || 'Evento borrado correctamente.');
+    } catch (err) {
+        console.error('Error borrando evento:', err);
+        alert('No se pudo borrar el evento.');
+    }
 }
 
 function agregarItemEdicionMedia(url, tipo) {
@@ -395,7 +680,11 @@ async function handleFormEditarEvento(e) {
     formData.append('eliminarMultimedia', JSON.stringify(archivosMultimediaABorrar));
     const files = document.getElementById('editGaleria').files;
     for (let i = 0; i < files.length; i++) formData.append('galeria', files[i]);
-    const res = await fetch(`${API_BASE}/api/eventos/${idEvento}`, { method: 'PUT', body: formData });
+    const res = await fetch(`${API_BASE}/api/eventos/${idEvento}`, {
+        method: 'PUT',
+        headers: obtenerHeadersAutenticacion(),
+        body: formData
+    });
     if (res.ok) {
         cerrarModalEditar();
         await cargarPortal();
@@ -447,7 +736,7 @@ async function ejecutarInteraccionDetalle(idEvento, accion, modoSocial = false, 
     try {
         const res = await fetch(`${API_BASE}/api/eventos/${idEvento}/interaccion`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: obtenerHeadersAutenticacion({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ usuarioId: usuarioConectado.id || usuarioConectado._id, accion, modoSocial: modoSocialActivo })
         });
         const data = await res.json();
@@ -490,6 +779,7 @@ function abrirModalPerfilMenu() {
         abrirModalAuth();
         return;
     }
+    redSocialVista = 'muro';
     perfilSeccionActual = 'favoritos';
     perfilFiltroActual = 'todos';
     const modal = document.getElementById('modalPerfilMenu');
@@ -544,6 +834,35 @@ function mostrarSeccionPerfil(seccion, filtro = 'todos') {
                     <p><strong>Eventos a los que asistirás:</strong> ${asistencias.length}</p>
                     <p><strong>Chats abiertos:</strong> ${chatsActivos.length}</p>
                     <button class="perfil-acciones-card" onclick="abrirModalEditarPerfil()">Editar perfil</button>
+                </div>
+            </div>`;
+    } else if (seccion === 'social') {
+        contenido.innerHTML = `
+            <div class="perfil-menu-seccion">
+                <div class="perfil-menu-panel">
+                    <p style="color:var(--text-muted);">Cargando tu red social...</p>
+                </div>
+            </div>`;
+        cargarRedSocial(redSocialBusqueda);
+    } else if (seccion === 'chats') {
+        const chatsActivosEventos = eventosGuardados.filter((ev) => chatsActivos.includes(ev._id));
+        contenido.innerHTML = `
+            <div class="perfil-menu-seccion">
+                <div class="perfil-menu-panel">
+                    <h3>Tus chats activos</h3>
+                    <p style="color:var(--text-muted); margin-bottom: 14px;">Entra aquí para retomar cualquier conversación sin volver a pulsar “Asistiré”.</p>
+                    ${chatsActivosEventos.length === 0 ? '<p style="color:var(--text-muted);">Todavía no tienes chats activos.</p>' : chatsActivosEventos.map(ev => `
+                        <div class="perfil-menu-card">
+                            <div>
+                                <strong>${ev.titulo}</strong>
+                                <p class="meta">${ev.ubicacion?.direccion || 'Ubicación no definida'}</p>
+                                <p class="meta">${ev.fechaInicio ? new Date(ev.fechaInicio).toLocaleString() : 'Fecha no disponible'}</p>
+                            </div>
+                            <div class="perfil-acciones-card">
+                                <button onclick="abrirChatFlotante('${ev._id}', '${ev.titulo.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')">Entrar al chat</button>
+                                <button onclick="abrirModalDetalle('${ev._id}')">Ver evento</button>
+                            </div>
+                        </div>`).join('')}
                 </div>
             </div>`;
     } else if (seccion === 'favoritos') {
@@ -655,6 +974,272 @@ function filtrarEventosPerfil(eventos, filtro) {
     return eventos;
 }
 
+function obtenerResumenSocialUsuario() {
+    const user = usuarioConectado || {};
+    return {
+        seguidores: (user.seguidores || []).length,
+        siguiendo: (user.siguiendo || []).length,
+        amigos: (user.amigos || []).length,
+        recibidas: (user.solicitudesAmistadRecibidas || []).length,
+        enviadas: (user.solicitudesAmistadEnviadas || []).length,
+        notificaciones: (user.notificacionesSociales || []).filter((item) => !item.leida).length
+    };
+}
+
+async function cargarRedSocial(termino = redSocialBusqueda) {
+    if (!usuarioConectado) return;
+    redSocialBusqueda = termino || '';
+    try {
+        const query = redSocialBusqueda ? `?q=${encodeURIComponent(redSocialBusqueda)}` : '';
+        const [resUsuarios, resNotificaciones, resMuro] = await Promise.all([
+            fetch(`${API_BASE}/api/red-social/comunidad${query}`, { headers: obtenerHeadersAutenticacion() }),
+            fetch(`${API_BASE}/api/red-social/notificaciones`, { headers: obtenerHeadersAutenticacion() }),
+            fetch(`${API_BASE}/api/red-social/muro`, { headers: obtenerHeadersAutenticacion() })
+        ]);
+
+        if (resUsuarios.ok) {
+            const dataUsuarios = await resUsuarios.json();
+            redSocialUsuarios = dataUsuarios.usuarios || [];
+        }
+        if (resNotificaciones.ok) {
+            const dataNotificaciones = await resNotificaciones.json();
+            redSocialNotificaciones = dataNotificaciones.notificaciones || [];
+        }
+        if (resMuro.ok) {
+            const dataMuro = await resMuro.json();
+            redSocialMuro = dataMuro.muro || [];
+        }
+        actualizarBadgeNotificacionesSociales();
+
+        if (perfilSeccionActual === 'social') {
+            renderizarSeccionSocial();
+        }
+    } catch (err) {
+        console.error('Error cargando la red social:', err);
+    }
+}
+
+function renderizarSeccionSocial() {
+    const contenido = document.getElementById('contenidoPerfilMenu');
+    if (!contenido) return;
+    const user = usuarioConectado || {};
+    const resumen = obtenerResumenSocialUsuario();
+    const comunidad = redSocialUsuarios || [];
+    const notificaciones = redSocialNotificaciones.length > 0 ? redSocialNotificaciones : (user.notificacionesSociales || []);
+    const muro = redSocialMuro || [];
+
+    const renderMuro = muro.length === 0
+        ? '<div class="social-empty-state"><strong>Tu muro está tranquilo.</strong><p>Cuando tú o tus amigos interactuéis con planes, aparecerán aquí.</p></div>'
+        : muro.map((item) => {
+            const avatar = item.actorFotos && item.actorFotos[0] ? item.actorFotos[0] : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120';
+            const pillClass = item.tipo === 'evento' ? 'social-pill-evento' : item.tipo === 'amistad' ? 'social-pill-amistad' : 'social-pill-seguir';
+            return `
+                <article class="social-story-card">
+                    <div class="social-story-top">
+                        <img src="${escaparHtml(avatar)}" alt="${escaparHtml(item.actorNombre)}" class="social-story-avatar">
+                        <div>
+                            <strong>${escaparHtml(item.actorNombre)}</strong>
+                            <p>${escaparHtml(item.esPropia ? 'Tu actividad' : 'Actividad de un amigo')}</p>
+                        </div>
+                        <span class="social-story-time">${item.creado ? new Date(item.creado).toLocaleString() : ''}</span>
+                    </div>
+                    <div class="social-story-body">
+                        <span class="social-story-badge ${pillClass}">${escaparHtml(item.titulo || 'Actividad')}</span>
+                        <p>${escaparHtml(item.mensaje || '')}</p>
+                    </div>
+                    <div class="social-story-actions">
+                        ${item.eventoId ? `<button type="button" onclick="abrirModalDetalle('${item.eventoId}')">Ver evento</button>` : ''}
+                    </div>
+                </article>`;
+        }).join('');
+
+    const renderPersonas = comunidad.length === 0
+        ? '<div class="social-empty-state"><strong>No hay personas que mostrar.</strong><p>Busca por nombre, email o localidad para descubrir usuarios.</p></div>'
+        : comunidad.map((usuario) => {
+            const rel = usuario.relacion || {};
+            const estadoEtiqueta = rel.esAmigo ? 'Amigo' : rel.solicitudRecibida ? 'Te pidió amistad' : rel.solicitudEnviada ? 'Solicitud enviada' : rel.sigue ? 'Siguiendo' : 'Disponible';
+            const avatar = usuario.fotos && usuario.fotos[0] ? usuario.fotos[0] : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120';
+            const acciones = [];
+            if (rel.esAmigo) {
+                acciones.push(`<button type="button" onclick="accionRedSocial('${usuario.id}', 'dejar_amigo')">Dejar de ser amigo</button>`);
+            } else if (rel.solicitudRecibida) {
+                acciones.push(`<button type="button" onclick="accionRedSocial('${usuario.id}', 'aceptar_solicitud_amistad')">Aceptar amistad</button>`);
+                acciones.push(`<button type="button" onclick="accionRedSocial('${usuario.id}', 'rechazar_solicitud_amistad')">Rechazar</button>`);
+            } else if (rel.solicitudEnviada) {
+                acciones.push(`<button type="button" onclick="accionRedSocial('${usuario.id}', 'cancelar_solicitud_amistad')">Cancelar solicitud</button>`);
+            } else {
+                acciones.push(`<button type="button" onclick="accionRedSocial('${usuario.id}', 'solicitar_amistad')">Solicitar amistad</button>`);
+            }
+            if (rel.sigue) {
+                acciones.push(`<button type="button" onclick="accionRedSocial('${usuario.id}', 'dejar_de_seguir')">Dejar de seguir</button>`);
+            } else {
+                acciones.push(`<button type="button" onclick="accionRedSocial('${usuario.id}', 'seguir')">Seguir</button>`);
+            }
+            return `
+                <article class="social-person-card">
+                    <div class="social-person-main">
+                        <img src="${escaparHtml(avatar)}" alt="${escaparHtml(usuario.nombre)}" class="social-person-avatar">
+                        <div>
+                            <strong>${escaparHtml(usuario.nombre)}</strong>
+                            <p>${escaparHtml(usuario.email || '')}</p>
+                            <p>${escaparHtml(usuario.localidad || 'Sin localidad')}</p>
+                        </div>
+                    </div>
+                    <div class="social-person-meta">${escaparHtml(estadoEtiqueta)}</div>
+                    <div class="perfil-acciones-card social-person-actions">
+                        ${acciones.join('')}
+                    </div>
+                </article>`;
+        }).join('');
+
+    const renderAlertas = notificaciones.length === 0
+        ? '<div class="social-empty-state"><strong>No hay alertas nuevas.</strong><p>Cuando haya movimiento en tu red, lo verás aquí.</p></div>'
+        : notificaciones.map((item) => `
+            <article class="social-notification-card ${item.leida ? 'read' : 'unread'}">
+                <span class="social-notification-dot"></span>
+                <div>
+                    <strong>${escaparHtml(item.titulo || 'Notificación')}</strong>
+                    <p>${escaparHtml(item.mensaje || '')}</p>
+                    <small>${item.creado ? new Date(item.creado).toLocaleString() : ''}</small>
+                </div>
+            </article>`).join('');
+
+    contenido.innerHTML = `
+        <div class="social-shell">
+            <div class="social-hero">
+                <div>
+                    <p class="social-kicker">Red social interna</p>
+                    <h3>${redSocialVista === 'muro' ? 'Muro de actividad' : redSocialVista === 'comunidad' ? 'Descubre personas' : 'Alertas y notificaciones'}</h3>
+                    <p>${redSocialVista === 'muro' ? 'Actividad reciente de tu red y tus planes.' : redSocialVista === 'comunidad' ? 'Busca personas, sigue intereses y crea amistades.' : 'Lo último que ha pasado en tu red.'}</p>
+                </div>
+                <div class="social-stats-grid">
+                    <div class="social-stat-card"><strong>${resumen.amigos}</strong><span>Amigos</span></div>
+                    <div class="social-stat-card"><strong>${resumen.siguiendo}</strong><span>Siguiendo</span></div>
+                    <div class="social-stat-card"><strong>${resumen.seguidores}</strong><span>Seguidores</span></div>
+                    <div class="social-stat-card"><strong>${resumen.notificaciones}</strong><span>No leídas</span></div>
+                </div>
+                <div class="social-tabs">
+                    <button type="button" class="${redSocialVista === 'muro' ? 'active' : ''}" onclick="cambiarVistaSocial('muro')">Muro</button>
+                    <button type="button" class="${redSocialVista === 'comunidad' ? 'active' : ''}" onclick="cambiarVistaSocial('comunidad')">Personas</button>
+                    <button type="button" class="${redSocialVista === 'notificaciones' ? 'active' : ''}" onclick="cambiarVistaSocial('notificaciones')">Alertas</button>
+                </div>
+            </div>
+            <div class="social-layout">
+                <section class="social-main-panel">
+                    ${redSocialVista === 'muro' ? `
+                        <div class="social-feed-header">
+                            <div>
+                                <h4>Tu muro</h4>
+                                <p>La actividad más reciente de tu red, en una vista tipo feed.</p>
+                            </div>
+                            <button type="button" onclick="cargarRedSocial(redSocialBusqueda)">Actualizar</button>
+                        </div>
+                        <div class="social-feed-list">${renderMuro}</div>` : ''}
+                    ${redSocialVista === 'comunidad' ? `
+                        <div class="social-feed-header">
+                            <div>
+                                <h4>Personas</h4>
+                                <p>Conecta con usuarios que puedan coincidir contigo.</p>
+                            </div>
+                            <button type="button" onclick="cargarRedSocial(redSocialBusqueda)">Actualizar</button>
+                        </div>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+                            <input id="busquedaRedSocial" type="search" placeholder="Buscar por nombre, email o localidad" value="${escaparHtml(redSocialBusqueda)}" style="flex:1; min-width:220px; padding:12px 14px; border-radius:12px; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.6); color:white;">
+                            <button type="button" onclick="buscarRedSocial()" style="background:#4f46e5; color:white; border:none; border-radius:12px; padding:12px 16px; font-weight:700; cursor:pointer;">Buscar</button>
+                            <button type="button" onclick="cargarRedSocial('')" style="background:rgba(255,255,255,0.08); color:white; border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px 16px; font-weight:700; cursor:pointer;">Ver todos</button>
+                        </div>
+                        <div class="social-people-list">${renderPersonas}</div>` : ''}
+                    ${redSocialVista === 'notificaciones' ? `
+                        <div class="social-feed-header">
+                            <div>
+                                <h4>Alertas</h4>
+                                <p>Lo que está pasando en tu red y en tus planes.</p>
+                            </div>
+                            <button type="button" onclick="marcarNotificacionesSocialLeidas()">Marcar todo leído</button>
+                        </div>
+                        <div class="social-notifications-list">${renderAlertas}</div>` : ''}
+                </section>
+                <aside class="social-side-panel">
+                    <div class="perfil-menu-panel">
+                        <h3>Acciones rápidas</h3>
+                        <p style="color:var(--text-muted); margin-bottom:12px;">Elige un modo y entra directo al flujo que necesitas.</p>
+                        <button type="button" class="social-side-button" onclick="cambiarVistaSocial('muro')">Abrir muro</button>
+                        <button type="button" class="social-side-button" onclick="cambiarVistaSocial('comunidad')">Buscar personas</button>
+                        <button type="button" class="social-side-button" onclick="cambiarVistaSocial('notificaciones')">Ver alertas</button>
+                    </div>
+                    <div class="perfil-menu-panel">
+                        <h3>Resumen</h3>
+                        <div class="social-mini-summary">
+                            <span>Amigos <strong>${resumen.amigos}</strong></span>
+                            <span>Seguidores <strong>${resumen.seguidores}</strong></span>
+                            <span>Solicitudes <strong>${resumen.recibidas}</strong></span>
+                            <span>No leídas <strong>${resumen.notificaciones}</strong></span>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </div>`;
+}
+
+function cambiarVistaSocial(vista) {
+    redSocialVista = vista;
+    renderizarSeccionSocial();
+    cargarRedSocial(redSocialBusqueda);
+}
+
+async function buscarRedSocial() {
+    const input = document.getElementById('busquedaRedSocial');
+    const termino = input ? input.value.trim() : '';
+    await cargarRedSocial(termino);
+}
+
+async function accionRedSocial(objetivoId, accion) {
+    if (!usuarioConectado) {
+        abrirModalAuth();
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/red-social/accion`, {
+            method: 'POST',
+            headers: obtenerHeadersAutenticacion({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ objetivoId, accion })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || 'No se pudo completar la acción social.');
+            return;
+        }
+        alert(data.mensaje || 'Acción social completada.');
+        await cargarDatosUsuario();
+        await cargarRedSocial(redSocialBusqueda);
+    } catch (err) {
+        console.error('Error aplicando acción social:', err);
+        alert('No se pudo completar la acción social.');
+    }
+}
+
+async function marcarNotificacionesSocialLeidas() {
+    try {
+        const res = await fetch(`${API_BASE}/api/red-social/notificaciones/marcar-leidas`, {
+            method: 'POST',
+            headers: obtenerHeadersAutenticacion({ 'Content-Type': 'application/json' })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || 'No se pudieron marcar las notificaciones.');
+            return;
+        }
+        redSocialNotificaciones = data.notificaciones || [];
+        await cargarDatosUsuario();
+        actualizarBadgeNotificacionesSociales();
+        if (perfilSeccionActual === 'social') {
+            renderizarSeccionSocial();
+        }
+    } catch (err) {
+        console.error('Error marcando notificaciones sociales:', err);
+    }
+}
+
 function ordenarEventosPorFecha(eventos) {
     return eventos.slice().sort((a, b) => {
         const fechaA = a.fechaInicio ? Date.parse(a.fechaInicio) : 0;
@@ -687,7 +1272,7 @@ async function guardarValoracion(eventoId) {
         const usuarioId = usuarioConectado.id || usuarioConectado._id;
         const res = await fetch(`${API_BASE}/api/usuarios/${usuarioId}/valoracion`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: obtenerHeadersAutenticacion({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ eventoId, estrellas, comentario })
         });
         const data = await res.json();
@@ -716,13 +1301,19 @@ async function cargarDatosUsuario() {
     if (!usuarioConectado || !(usuarioConectado.id || usuarioConectado._id)) return;
     try {
         const id = usuarioConectado.id || usuarioConectado._id;
-        const res = await fetch(`${API_BASE}/api/usuarios/${id}`);
+        const res = await fetch(`${API_BASE}/api/usuarios/${id}`, {
+            headers: obtenerHeadersAutenticacion()
+        });
         if (!res.ok) return;
         const data = await res.json();
         usuarioConectado = { ...usuarioConectado, ...data.usuario };
         guardarSesionUsuario();
         gestionarIUUsuario();
         renderizarMisEventosGuardados();
+        actualizarBadgeNotificacionesSociales();
+        if (perfilSeccionActual === 'social') {
+            await cargarRedSocial(redSocialBusqueda);
+        }
     } catch (err) {
         console.error('Error cargando datos de usuario:', err);
     }
@@ -786,6 +1377,58 @@ function abrirModal() {
     }, 200);
 }
 
+function configurarAutocompleteDireccionEvento() {
+    const input = document.getElementById('inputBuscar');
+    const contenedor = document.getElementById('direccionSugerenciasEvento');
+    const hidden = document.getElementById('direccionEventoSeleccionada');
+    const direccion = document.getElementById('direccion');
+    if (!input || !contenedor || !hidden || !direccion) return;
+
+    let temporizador = null;
+    input.addEventListener('input', () => {
+        hidden.value = '';
+        direccion.value = '';
+        contenedor.innerHTML = '';
+        const query = input.value.trim();
+        if (query.length < 3) return;
+
+        clearTimeout(temporizador);
+        temporizador = setTimeout(async () => {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                if (!Array.isArray(data) || data.length === 0) return;
+                contenedor.innerHTML = data.map((item) => {
+                    const payload = encodeURIComponent(JSON.stringify({
+                        placeId: item.place_id,
+                        displayName: item.display_name,
+                        latitud: Number(item.lat),
+                        longitud: Number(item.lon),
+                        countryCode: String(item.address?.country_code || '').toUpperCase(),
+                        countryName: item.address?.country || ''
+                    }));
+                    return `<button type="button" class="direccion-sugerencia" data-json="${payload}">${item.display_name}</button>`;
+                }).join('');
+                contenedor.querySelectorAll('.direccion-sugerencia').forEach((boton) => {
+                    boton.addEventListener('click', () => {
+                        const raw = boton.getAttribute('data-json') || '';
+                        if (!raw) return;
+                        const parsed = JSON.parse(decodeURIComponent(raw));
+                        hidden.value = JSON.stringify(parsed);
+                        direccion.value = parsed.displayName || '';
+                        input.value = parsed.displayName || '';
+                        contenedor.innerHTML = '';
+                        mapModal.setView([parsed.latitud, parsed.longitud], 15);
+                        establecerCoordenadasFormulario(parsed.latitud, parsed.longitud);
+                    });
+                });
+            } catch (error) {
+                console.error('Error autocompletando dirección del evento:', error);
+            }
+        }, 300);
+    });
+}
+
 function establecerCoordenadasFormulario(lat, lng) {
     document.getElementById('latitud').value = lat;
     document.getElementById('longitud').value = lng;
@@ -797,16 +1440,8 @@ function establecerCoordenadasFormulario(lat, lng) {
 }
 
 async function buscarDireccion() {
-    const query = document.getElementById('inputBuscar').value;
-    if (!query) return;
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
-    const data = await res.json();
-    if (data.length > 0) {
-        const first = data[0];
-        mapModal.setView([first.lat, first.lon], 15);
-        establecerCoordenadasFormulario(first.lat, first.lon);
-        document.getElementById('direccion').value = first.display_name;
-    }
+    const input = document.getElementById('inputBuscar');
+    if (input) input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function cerrarModal() { document.getElementById('modalFormulario').style.display = 'none'; }
@@ -843,6 +1478,13 @@ function abrirModalEditarPerfil() {
     document.getElementById('perfilColorSemaforo').value = usuarioConectado.colorSemaforo || 'AMARILLO';
     document.getElementById('perfilDescripcion').value = usuarioConectado.descripcionPersonal || '';
     document.getElementById('perfilTipoUsuario').value = usuarioConectado.tipoUsuario || 'CLIENTE';
+    inicializarSelectPaises('perfilPais', usuarioConectado.pais || 'ES');
+    inicializarPlanesFormulario('perfil', usuarioConectado.preferenciasPlanes || []);
+    const perfilDireccion = usuarioConectado.direccionResidencia || {};
+    const inputDireccionPerfil = document.getElementById('perfilDireccionBusqueda');
+    const hiddenDireccionPerfil = document.getElementById('perfilDireccionResidencia');
+    if (inputDireccionPerfil) inputDireccionPerfil.value = perfilDireccion.displayName || '';
+    if (hiddenDireccionPerfil && perfilDireccion.displayName) hiddenDireccionPerfil.value = JSON.stringify(perfilDireccion);
     const perfilSolicitud = document.getElementById('perfilSolicitudPromotor');
     if (usuarioConectado.tipoUsuario === 'PROMOTOR') {
         perfilSolicitud.style.display = 'block';
@@ -873,10 +1515,26 @@ async function handleFormEditarPerfil(e) {
     const colorSemaforo = document.getElementById('perfilColorSemaforo').value;
     const descripcion = document.getElementById('perfilDescripcion').value;
     const tipoUsuario = document.getElementById('perfilTipoUsuario').value;
+    const pais = document.getElementById('perfilPais').value;
+    const direccionResidencia = obtenerDireccionSeleccionadaFormulario('perfil');
+    const preferenciasPlanes = obtenerPlanesSeleccionadosFormulario('perfil');
     const solicitudPromotor = document.getElementById('perfilSolicitudPromotor').value.trim();
     const verificacionPromotor = obtenerVerificacionPromotorDesdeFormulario('perfil');
     const fileInput = document.getElementById('inputFotoPerfil');
     const quiereSerPromotor = tipoUsuario === 'PROMOTOR';
+
+    if (!pais) {
+        alert('Debes seleccionar tu país de residencia.');
+        return;
+    }
+    if (!direccionResidencia) {
+        alert('Debes seleccionar una dirección válida desde las sugerencias.');
+        return;
+    }
+    if (preferenciasPlanes.length === 0) {
+        alert('Selecciona al menos una preferencia de planes.');
+        return;
+    }
 
     if (quiereSerPromotor && !verificacionPromotorCompleta(verificacionPromotor)) {
         alert('Para activar perfil de promotor debes completar todos los datos de verificación y confirmar la declaración de veracidad.');
@@ -887,6 +1545,9 @@ async function handleFormEditarPerfil(e) {
     formData.append('colorSemaforo', colorSemaforo);
     formData.append('descripcionPersonal', descripcion);
     formData.append('tipoUsuario', tipoUsuario);
+    formData.append('pais', pais);
+    formData.append('direccionResidencia', JSON.stringify(direccionResidencia));
+    formData.append('preferenciasPlanes', JSON.stringify(preferenciasPlanes));
     if (quiereSerPromotor) {
         formData.append('solicitudPromotor', solicitudPromotor);
         formData.append('verificacionPromotor', JSON.stringify(verificacionPromotor));
@@ -902,7 +1563,7 @@ async function handleFormEditarPerfil(e) {
     try {
         const res = await fetch(`${API_BASE}/api/usuarios/${usuarioConectado.id || usuarioConectado._id}`, {
             method: 'PUT',
-            headers: { 'x-user-id': usuarioConectado.id || usuarioConectado._id },
+            headers: obtenerHeadersAutenticacion(),
             body: formData
         });
         const data = await res.json();
@@ -914,6 +1575,9 @@ async function handleFormEditarPerfil(e) {
             usuarioConectado.verificacionPromotor = data.usuario.verificacionPromotor || (quiereSerPromotor ? verificacionPromotor : {});
             usuarioConectado.colorSemaforo = colorSemaforo;
             usuarioConectado.descripcionPersonal = descripcion;
+            usuarioConectado.pais = data.usuario.pais || pais;
+            usuarioConectado.direccionResidencia = data.usuario.direccionResidencia || direccionResidencia;
+            usuarioConectado.preferenciasPlanes = data.usuario.preferenciasPlanes || preferenciasPlanes;
             if (data.usuario.fotos && data.usuario.fotos[0]) {
                 usuarioConectado.fotos = data.usuario.fotos;
                 document.getElementById('previewFoto').src = data.usuario.fotos[0];
@@ -948,8 +1612,17 @@ document.getElementById('inputFotoPerfil').addEventListener('change', function(e
 function cambiarPestanaAuth(tipo) {
     document.getElementById('formLogin').style.display = tipo === 'login' ? 'block' : 'none';
     document.getElementById('formRegistro').style.display = tipo === 'registro' ? 'block' : 'none';
+    const formVerificar = document.getElementById('formVerificarEmail');
+    if (formVerificar) {
+        formVerificar.style.display = tipo === 'verificar' ? 'block' : 'none';
+    }
     document.getElementById('btnTabLogin').style.background = tipo === 'login' ? '#4f46e5' : 'transparent';
     document.getElementById('btnTabRegistro').style.background = tipo === 'registro' ? '#4f46e5' : 'transparent';
+    const btnTabVerificar = document.getElementById('btnTabVerificar');
+    if (btnTabVerificar) {
+        btnTabVerificar.style.display = (tipo === 'verificar' || emailPendienteVerificacion) ? 'block' : 'none';
+        btnTabVerificar.style.background = tipo === 'verificar' ? '#4f46e5' : 'transparent';
+    }
 }
 
 async function handleFormLogin(e) {
@@ -964,14 +1637,69 @@ async function handleFormLogin(e) {
     const data = await res.json();
     if (res.ok) {
         usuarioConectado = data.usuario;
+        tokenSesion = data.token || null;
         guardarSesionUsuario();
         gestionarIUUsuario();
         cerrarModalAuth();
         await cargarDatosUsuario();
         cargarPortal();
     } else {
+        if (data.requiereVerificacionEmail) {
+            emailPendienteVerificacion = data.email || email;
+            const inputEmail = document.getElementById('verifEmail');
+            if (inputEmail) inputEmail.value = emailPendienteVerificacion;
+            alert('Tu cuenta aún no está verificada. Introduce el código que te enviamos por email.');
+            cambiarPestanaAuth('verificar');
+            return;
+        }
         alert(data.error);
     }
+}
+
+async function handleFormVerificarEmail(e) {
+    e.preventDefault();
+    const email = document.getElementById('verifEmail').value.trim();
+    const codigo = document.getElementById('verifCodigo').value.trim();
+    if (!email || !codigo) {
+        alert('Debes indicar email y código de verificación.');
+        return;
+    }
+
+    const res = await fetch(`${API_BASE}/api/usuarios/verificar-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, codigo })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(data.error || 'No se pudo verificar el email.');
+        return;
+    }
+
+    emailPendienteVerificacion = '';
+    document.getElementById('verifCodigo').value = '';
+    alert('Email verificado correctamente. Ya puedes iniciar sesión.');
+    cambiarPestanaAuth('login');
+    document.getElementById('loginEmail').value = email;
+}
+
+async function reenviarCodigoVerificacionEmail() {
+    const email = (document.getElementById('verifEmail').value || emailPendienteVerificacion || '').trim();
+    if (!email) {
+        alert('Indica tu email para reenviar el código.');
+        return;
+    }
+    const res = await fetch(`${API_BASE}/api/usuarios/reenviar-verificacion-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(data.error || 'No se pudo reenviar el código.');
+        return;
+    }
+    alert(data.mensaje || 'Código reenviado correctamente.');
 }
 
 function actualizarFormularioRegistroPromotor() {
@@ -1017,20 +1745,48 @@ actualizarPerfilPromotor();
 
 async function handleFormRegistro(e) {
     e.preventDefault();
+    const fechaNacimiento = document.getElementById('regFechaNac').value;
+    if (!fechaNacimiento) {
+        alert('Debes indicar tu fecha de nacimiento.');
+        return;
+    }
+    if (!esMayorDeEdad(fechaNacimiento)) {
+        alert('Registro no permitido: Plandem es solo para mayores de 18 años.');
+        return;
+    }
+
     const tipoUsuario = document.getElementById('regTipoUsuario').value;
+    const pais = document.getElementById('regPais').value;
+    const direccionResidencia = obtenerDireccionSeleccionadaFormulario('reg');
+    const preferenciasPlanes = obtenerPlanesSeleccionadosFormulario('reg');
     const solicitudPromotor = tipoUsuario === 'PROMOTOR' ? document.getElementById('regSolicitudPromotor').value.trim() : '';
     const verificacionPromotor = tipoUsuario === 'PROMOTOR' ? obtenerVerificacionPromotorDesdeFormulario('reg') : {};
     if (tipoUsuario === 'PROMOTOR' && !verificacionPromotorCompleta(verificacionPromotor)) {
         alert('Para crear cuenta de promotor debes completar todos los datos de verificación.');
         return;
     }
+    if (!pais) {
+        alert('Debes seleccionar un país válido.');
+        return;
+    }
+    if (!direccionResidencia) {
+        alert('Debes seleccionar una dirección válida desde las sugerencias.');
+        return;
+    }
+    if (preferenciasPlanes.length === 0) {
+        alert('Selecciona al menos una preferencia de planes.');
+        return;
+    }
     const bodyObj = {
         nombre: document.getElementById('regNombre').value,
         email: document.getElementById('regEmail').value,
         password: document.getElementById('regPassword').value,
-        fechaNacimiento: document.getElementById('regFechaNac').value,
-        nacionalidad: document.getElementById('regNacionalidad').value,
-        localidad: document.getElementById('regLocalidad').value,
+        fechaNacimiento,
+        nacionalidad: direccionResidencia.countryName || pais,
+        localidad: direccionResidencia.displayName || '',
+        pais,
+        direccionResidencia,
+        preferenciasPlanes,
         estadoCivil: document.getElementById('regEstadoCivil').value,
         tieneCoche: document.getElementById('regTieneCoche').value,
         tipoUsuario,
@@ -1046,19 +1802,26 @@ async function handleFormRegistro(e) {
     });
     const data = await res.json();
     if (res.ok) {
+        emailPendienteVerificacion = data.email || bodyObj.email;
+        const inputEmailVerif = document.getElementById('verifEmail');
+        if (inputEmailVerif) inputEmailVerif.value = emailPendienteVerificacion;
+        const btnTabVerificar = document.getElementById('btnTabVerificar');
+        if (btnTabVerificar) btnTabVerificar.style.display = 'block';
         if (tipoUsuario === 'PROMOTOR') {
-            alert('¡Cuenta de promotor creada! Tu perfil queda pendiente de verificación manual. Te abrimos el contacto de WhatsApp para validarlo.');
+            alert('¡Cuenta de promotor creada! Primero verifica tu email para activar el acceso. Después revisaremos manualmente tu perfil promotor.');
             usuarioConectado = {
                 ...(usuarioConectado || {}),
                 nombre: bodyObj.nombre,
                 email: bodyObj.email,
+                pais: bodyObj.pais,
+                direccionResidencia: bodyObj.direccionResidencia,
+                preferenciasPlanes: bodyObj.preferenciasPlanes,
                 verificacionPromotor
             };
-            abrirWhatsAppVerificacionPromotor();
         } else {
-            alert('¡Cuenta creada correctamente! Ya puedes iniciar sesión.');
+            alert('¡Cuenta creada! Te enviamos un código al email para activar la cuenta.');
         }
-        cambiarPestanaAuth('login');
+        cambiarPestanaAuth('verificar');
     } else {
         alert(data.error);
     }
@@ -1098,19 +1861,22 @@ function gestionarIUUsuario() {
     } else {
         document.getElementById('adminPromotorAlert').style.display = 'none';
     }
+
+    actualizarBadgeNotificacionesSociales();
 }
 
 function guardarSesionUsuario() {
-    if (!usuarioConectado) return;
+    if (!usuarioConectado || !tokenSesion) return;
     localStorage.setItem('usuarioConectado', JSON.stringify(usuarioConectado));
+    localStorage.setItem('tokenSesion', tokenSesion);
 }
 
 async function cargarSolicitudesPromotorPendientes() {
     try {
         const adminId = usuarioConectado?.id || usuarioConectado?._id;
         const [resPendientes, resUsuarios] = await Promise.all([
-            fetch(`${API_BASE}/api/usuarios/promotor-solicitudes`, { headers: { 'x-admin-id': adminId } }),
-            fetch(`${API_BASE}/api/usuarios`, { headers: { 'x-admin-id': adminId } })
+            fetch(`${API_BASE}/api/usuarios/promotor-solicitudes`, { headers: obtenerHeadersAutenticacion({ 'x-admin-id': adminId }) }),
+            fetch(`${API_BASE}/api/usuarios`, { headers: obtenerHeadersAutenticacion({ 'x-admin-id': adminId }) })
         ]);
         if (!resPendientes.ok) return;
         const dataPendientes = await resPendientes.json();
@@ -1205,10 +1971,7 @@ async function cambiarAccesoPromotor(usuarioId, accion) {
         }
         const res = await fetch(`${API_BASE}/api/usuarios/${usuarioId}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-user-id': usuarioConectado?.id || usuarioConectado?._id
-            },
+            headers: obtenerHeadersAutenticacion({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload)
         });
         const data = await res.json();
@@ -1234,6 +1997,7 @@ async function crearPromotorDesdeAdmin(e) {
     const nombre = document.getElementById('adminPromotorNombre').value.trim();
     const email = document.getElementById('adminPromotorEmail').value.trim();
     const password = document.getElementById('adminPromotorPassword').value.trim();
+    const tipoPerfil = document.getElementById('adminPromotorTipoPerfil').value;
     const estado = document.getElementById('adminPromotorEstado').value;
     if (!nombre || !email || !password) {
         alert('Completa nombre, email y contraseña temporal.');
@@ -1243,14 +2007,15 @@ async function crearPromotorDesdeAdmin(e) {
     try {
         const res = await fetch(`${API_BASE}/api/admin/usuarios-promotor`, {
             method: 'POST',
-            headers: {
+            headers: obtenerHeadersAutenticacion({
                 'Content-Type': 'application/json',
                 'x-admin-id': usuarioConectado?.id || usuarioConectado?._id
-            },
+            }),
             body: JSON.stringify({
                 nombre,
                 email,
                 password,
+                tipoPerfil,
                 promotorAprobado: estado === 'aprobado'
             })
         });
@@ -1259,7 +2024,7 @@ async function crearPromotorDesdeAdmin(e) {
             alert(data.error || 'No se pudo crear el promotor manualmente.');
             return;
         }
-        alert('Perfil de promotor creado correctamente.');
+        alert(tipoPerfil === 'MODERADOR' ? 'Moderador creado correctamente.' : 'Perfil de promotor creado correctamente.');
         document.getElementById('formCrearPromotorAdmin').reset();
         await cargarSolicitudesPromotorPendientes();
         abrirModalSolicitudesPromotor();
@@ -1271,7 +2036,20 @@ async function crearPromotorDesdeAdmin(e) {
 
 function cargarSesionUsuario() {
     const storedUser = localStorage.getItem('usuarioConectado');
+    const storedToken = localStorage.getItem('tokenSesion');
+    tokenSesion = storedToken || null;
     if (!storedUser) {
+        redSocialUsuarios = [];
+        redSocialNotificaciones = [];
+        redSocialBusqueda = '';
+        gestionarIUUsuario();
+        return;
+    }
+    if (!tokenSesion) {
+        localStorage.removeItem('usuarioConectado');
+        redSocialUsuarios = [];
+        redSocialNotificaciones = [];
+        redSocialBusqueda = '';
         gestionarIUUsuario();
         return;
     }
@@ -1289,13 +2067,18 @@ function cargarSesionUsuario() {
 
 function cerrarSesion() {
     usuarioConectado = null;
+    tokenSesion = null;
+    redSocialUsuarios = [];
+    redSocialNotificaciones = [];
+    redSocialBusqueda = '';
     localStorage.removeItem('usuarioConectado');
+    localStorage.removeItem('tokenSesion');
     gestionarIUUsuario();
     cargarPortal();
 }
 
 function usuarioPuedeModerarChat() {
-    return esSuperAdmin();
+    return esSuperAdmin() || esModerador();
 }
 
 function obtenerEstadoModeracionChatBase() {
@@ -1511,10 +2294,10 @@ async function moderarChatEvento(idEvento, accion, extra = {}) {
     try {
         const res = await fetch(`${API_BASE}/api/eventos/${idEvento}/chat/moderacion`, {
             method: 'POST',
-            headers: {
+            headers: obtenerHeadersAutenticacion({
                 'Content-Type': 'application/json',
                 'x-admin-id': usuarioConectado?.id || usuarioConectado?._id
-            },
+            }),
             body: JSON.stringify({ accion, ...extra })
         });
         const data = await res.json();
@@ -1568,7 +2351,9 @@ async function obtenerMensajesChat(idEvento) {
     if (!chatInfo) return;
     try {
         const res = await fetch(`${API_BASE}/api/eventos/${idEvento}/chat`, {
-            headers: usuarioConectado ? { 'x-user-id': usuarioConectado.id || usuarioConectado._id } : {}
+            headers: usuarioConectado
+                ? obtenerHeadersAutenticacion({ 'x-user-id': usuarioConectado.id || usuarioConectado._id })
+                : {}
         });
         if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
@@ -1604,7 +2389,7 @@ async function enviarMensajeChat(e, idEvento) {
     try {
         const res = await fetch(`${API_BASE}/api/eventos/${idEvento}/chat`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: obtenerHeadersAutenticacion({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 usuarioId: usuarioConectado.id || usuarioConectado._id,
                 autor: usuarioConectado.nombre,
@@ -1722,6 +2507,8 @@ function abrirChatFlotante(idEvento, tituloEvento) {
 
 document.getElementById('formLogin').onsubmit = handleFormLogin;
 document.getElementById('formRegistro').onsubmit = handleFormRegistro;
+document.getElementById('formVerificarEmail')?.addEventListener('submit', handleFormVerificarEmail);
+document.getElementById('btnReenviarCodigo')?.addEventListener('click', reenviarCodigoVerificacionEmail);
 document.getElementById('formEditarPerfil').onsubmit = handleFormEditarPerfil;
 document.getElementById('formSolicitudPromotor')?.addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -1743,10 +2530,7 @@ document.getElementById('formSolicitudPromotor')?.addEventListener('submit', asy
     }
     const res = await fetch(`${API_BASE}/api/usuarios/${usuarioConectado.id || usuarioConectado._id}`, {
         method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-user-id': usuarioConectado.id || usuarioConectado._id
-        },
+        headers: obtenerHeadersAutenticacion({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
             tipoUsuario: 'PROMOTOR',
             solicitudPromotor: mensaje,
@@ -1795,13 +2579,12 @@ document.getElementById('formEvento').onsubmit = async function(e) {
         formData.append('precio', precioInput?.value || 0);
         formData.append('organizador', document.getElementById('organizador').value);
         formData.append('esPremium', document.getElementById('esPremium').checked);
-        const ubicacionObj = {
-            direccion: document.getElementById('direccion').value || document.getElementById('inputBuscar').value || 'Torredembarra, España',
-            coordenadas: {
-                latitud: parseFloat(document.getElementById('latitud').value) || 41.1444,
-                longitud: parseFloat(document.getElementById('longitud').value) || 1.3961
-            }
-        };
+        const ubicacionSeleccionada = document.getElementById('direccionEventoSeleccionada').value;
+        if (!ubicacionSeleccionada) {
+            alert('Debes seleccionar una ubicación válida desde las sugerencias.');
+            return;
+        }
+        const ubicacionObj = JSON.parse(ubicacionSeleccionada);
         formData.append('ubicacion', JSON.stringify(ubicacionObj));
         const fileFile = document.getElementById('multimedia').files[0];
         if (fileFile) formData.append('multimedia', fileFile);
@@ -1809,7 +2592,11 @@ document.getElementById('formEvento').onsubmit = async function(e) {
         for (let i = 0; i < galeria.length; i++) {
             formData.append('galeria', galeria[i]);
         }
-        const res = await fetch(`${API_BASE}/api/eventos`, { method: 'POST', body: formData });
+        const res = await fetch(`${API_BASE}/api/eventos`, {
+            method: 'POST',
+            headers: obtenerHeadersAutenticacion(),
+            body: formData
+        });
         if (res.ok) {
             cerrarModal();
             cargarPortal();
@@ -1829,6 +2616,19 @@ document.getElementById('formEvento').onsubmit = async function(e) {
 document.getElementById('formEditarEvento').onsubmit = handleFormEditarEvento;
 
 window.onload = function() {
+    inicializarSelectPaises('regPais', 'ES');
+    inicializarSelectPaises('perfilPais', 'ES');
+    inicializarPlanesFormulario('reg', []);
+    inicializarPlanesFormulario('perfil', []);
+    configurarAutocompleteDireccion('reg');
+    configurarAutocompleteDireccion('perfil');
+    configurarAutocompleteDireccionEvento();
+    const fechaNacInput = document.getElementById('regFechaNac');
+    if (fechaNacInput) {
+        const hoy = new Date();
+        hoy.setFullYear(hoy.getFullYear() - 18);
+        fechaNacInput.max = hoy.toISOString().split('T')[0];
+    }
     inicializarMapaGlobal();
     cargarSesionUsuario();
     cargarPortal();

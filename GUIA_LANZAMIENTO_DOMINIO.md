@@ -52,7 +52,7 @@ Paso 3. Desplegar en Render
 	- CORS_ORIGINS = la URL publica de Render, por ejemplo https://plandem-portal-eventos.onrender.com
 	- CLOUDINARY_URL = cadena cloudinary://... (opcion recomendada)
 	- CLOUDINARY_FOLDER = plandem/perfiles
-	- CLOUDINARY_PROFILE_STORAGE_REQUIRED = true
+	- CLOUDINARY_PROFILE_STORAGE_REQUIRED = false (modo gratuito, fallback local)
 5. Inicia el deploy.
 
 Paso 4. Verificar que arranco bien
@@ -90,4 +90,4 @@ Checklist final rapido
 Notas importantes
 1. La carpeta uploads no es persistente en Render free.
 2. Las fotos de perfil ahora se suben a Cloudinary si configuras sus variables de entorno.
-3. Si no configuras Cloudinary y CLOUDINARY_PROFILE_STORAGE_REQUIRED=true, la subida de foto de perfil fallará para evitar almacenamiento local no persistente.
+3. Si no configuras Cloudinary y CLOUDINARY_PROFILE_STORAGE_REQUIRED=false, la subida sigue funcionando con almacenamiento local (puede perderse tras redeploy).

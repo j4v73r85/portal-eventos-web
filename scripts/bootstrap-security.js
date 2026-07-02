@@ -48,7 +48,7 @@ const generated = {
   CLOUDINARY_API_KEY: '',
   CLOUDINARY_API_SECRET: '',
   CLOUDINARY_FOLDER: 'plandem/perfiles',
-  CLOUDINARY_PROFILE_STORAGE_REQUIRED: 'true'
+  CLOUDINARY_PROFILE_STORAGE_REQUIRED: 'false'
 };
 
 const lines = Object.entries(generated).map(([k, v]) => `${k}=${v}`);

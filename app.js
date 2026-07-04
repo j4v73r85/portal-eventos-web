@@ -467,6 +467,66 @@ function urlify(text) {
     });
 }
 
+function normalizarTextoBusqueda(valor = '') {
+    return String(valor || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
+
+function irAlMapaInteractivo() {
+    const mapaEl = document.getElementById('mapaCalorGlobal');
+    if (!mapaEl) return;
+    mapaEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (mapGlobal) {
+        setTimeout(() => {
+            mapGlobal.invalidateSize();
+        }, 350);
+    }
+}
+
+function obtenerPrimerEventoFiestas() {
+    const candidato = todosLosEventos.find((ev) => {
+        const categoria = normalizarTextoBusqueda(ev?.categoria || '');
+        const titulo = normalizarTextoBusqueda(ev?.titulo || '');
+        return categoria.includes('fiesta') || titulo.includes('fiesta');
+    });
+    return candidato || null;
+}
+
+function irAlPrimerPlanFiestas() {
+    const eventoFiesta = obtenerPrimerEventoFiestas();
+    if (!eventoFiesta) {
+        alert('Aun no hay planes en la categoria fiestas disponibles.');
+        return;
+    }
+
+    const contenedor = document.getElementById('eventosContenedor');
+    const tarjeta = contenedor?.querySelector(`[data-evento-id="${eventoFiesta._id}"]`);
+
+    if (tarjeta) {
+        tarjeta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        tarjeta.classList.add('resaltado-plan');
+        setTimeout(() => tarjeta.classList.remove('resaltado-plan'), 2300);
+    } else if (contenedor) {
+        contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    setTimeout(() => abrirModalDetalle(eventoFiesta._id), 260);
+}
+
+function inicializarAccesosRapidosFranja() {
+    const btnMapa = document.getElementById('btnIrMapaInteres');
+    const btnFiestas = document.getElementById('btnIrFiestas');
+
+    if (btnMapa) {
+        btnMapa.addEventListener('click', irAlMapaInteractivo);
+    }
+    if (btnFiestas) {
+        btnFiestas.addEventListener('click', irAlPrimerPlanFiestas);
+    }
+}
+
 function inicializarMapaGlobal() {
     mapGlobal = L.map('mapaCalorGlobal').setView([41.14, 1.40], 12);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(mapGlobal);
@@ -511,6 +571,7 @@ function renderizarListaYMapa() {
     eventosNoPremium.forEach(ev => {
         const div = document.createElement('div');
         div.className = 'card';
+        div.dataset.eventoId = ev._id;
         div.onclick = (e) => {
             if (!e.target.closest('button') && !e.target.closest('audio') && !e.target.closest('span[onclick]')) {
                 abrirModalDetalle(ev._id);
@@ -2759,6 +2820,7 @@ window.onload = function() {
         hoy.setFullYear(hoy.getFullYear() - 18);
         fechaNacInput.max = hoy.toISOString().split('T')[0];
     }
+    inicializarAccesosRapidosFranja();
     inicializarMapaGlobal();
     cargarSesionUsuario();
     cargarPortal();

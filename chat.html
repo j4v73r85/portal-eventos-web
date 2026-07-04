@@ -4,41 +4,60 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat del Evento - Plandem</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-main: #0f172a;
-            --bg-card: #1e293b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --accent: #4f46e5;
-            --success: #10b981;
-            --warning: #f59e0b;
+            --bg-main: #07080f;
+            --bg-card: #121529;
+            --text-main: #f9f7ff;
+            --text-muted: #aeb4d4;
+            --accent: #ff2ea6;
+            --accent-2: #3f5dff;
+            --success: #2ce4a8;
+            --warning: #ffd04e;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg-main); color: var(--text-main); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
-        header { padding: 20px; background: #111827; border-bottom: 1px solid #334155; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: space-between; }
-        header h1 { font-size: 1.5rem; }
+        body {
+            background:
+                radial-gradient(circle at 12% 10%, rgba(255,46,166,0.22), transparent 26%),
+                radial-gradient(circle at 88% 12%, rgba(63,93,255,0.18), transparent 24%),
+                linear-gradient(150deg, #05060d 0%, #0b0d18 48%, #06070f 100%);
+            color: var(--text-main);
+            font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+            min-height: 100vh;
+        }
+        header {
+            padding: 20px;
+            background: linear-gradient(130deg, rgba(20,12,36,0.96), rgba(10,18,40,0.95));
+            border-bottom: 1px solid rgba(255,46,166,0.34);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            justify-content: space-between;
+        }
+        header h1 { font-size: 2rem; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
         header p { color: var(--text-muted); font-size: 0.95rem; }
         .contenedor { max-width: 1100px; margin: 24px auto; padding: 0 18px; }
-        .panel-info { background: var(--bg-card); border: 1px solid #334155; border-radius: 18px; padding: 22px; margin-bottom: 20px; }
-        .panel-info h2 { margin-bottom: 10px; font-size: 1.3rem; }
+        .panel-info { background: linear-gradient(180deg, rgba(18,21,41,0.95), rgba(10,12,22,0.96)); border: 1px solid rgba(255,46,166,0.28); border-radius: 18px; padding: 22px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(8,10,22,0.6); }
+        .panel-info h2 { margin-bottom: 10px; font-size: 1.8rem; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
         .panel-info p { color: var(--text-muted); line-height: 1.6; }
         .chat-panel { display: grid; grid-template-columns: 1fr; gap: 18px; }
-        .chat-ventana { background: #0f172a; border: 1px solid #334155; border-radius: 18px; height: 420px; overflow-y: auto; padding: 18px; }
-        .mensaje { margin-bottom: 14px; padding: 12px 14px; border-radius: 16px; background: rgba(79, 70, 229, 0.15); border: 1px solid rgba(79, 70, 229, 0.25); display: grid; grid-template-columns: 50px 1fr; gap: 12px; align-items: start; }
+        .chat-ventana { background: rgba(8, 10, 19, 0.92); border: 1px solid rgba(63,93,255,0.35); border-radius: 18px; height: 420px; overflow-y: auto; padding: 18px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
+        .mensaje { margin-bottom: 14px; padding: 12px 14px; border-radius: 16px; background: rgba(255, 46, 166, 0.1); border: 1px solid rgba(255, 46, 166, 0.25); display: grid; grid-template-columns: 50px 1fr; gap: 12px; align-items: start; }
         .mensaje .avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 3px solid #f59e0b; background: #0b1220; box-shadow: 0 0 0 2px rgba(255,255,255,0.08), 0 0 18px rgba(245,158,11,0.25); }
         .mensaje .avatar.estado-verde { border-color: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,0.25); }
         .mensaje .avatar.estado-amarillo { border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,0.25); }
         .mensaje .avatar.estado-rojo { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,0.25); }
-        .mensaje .autor { font-weight: 700; color: #e0e7ff; margin-right: 6px; }
+        .mensaje .autor { font-weight: 700; color: #f9d6ff; margin-right: 6px; }
         .mensaje .texto { color: #cbd5e1; line-height: 1.5; }
         .form-chat { display: flex; gap: 12px; }
-        .form-chat input { flex: 1; padding: 14px 16px; border-radius: 14px; border: 1px solid #334155; background: #111827; color: white; }
-        .form-chat button { padding: 14px 22px; border: none; border-radius: 14px; background: var(--accent); color: white; font-weight: 700; cursor: pointer; transition: filter 0.2s; }
+        .form-chat input { flex: 1; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(255,46,166,0.32); background: rgba(10,12,24,0.9); color: white; }
+        .form-chat button { padding: 14px 22px; border: none; border-radius: 14px; background: linear-gradient(130deg, var(--accent) 0%, #7e33ff 55%, var(--accent-2) 100%); color: white; font-weight: 700; cursor: pointer; transition: filter 0.2s; }
         .form-chat button:hover { filter: brightness(1.05); }
         .botones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-        .botones a, .botones button { color: white; text-decoration: none; background: #334155; border: none; border-radius: 12px; padding: 10px 16px; cursor: pointer; transition: background 0.2s; }
-        .botones a:hover, .botones button:hover { background: #475569; }
+        .botones a, .botones button { color: white; text-decoration: none; background: linear-gradient(130deg, rgba(255,46,166,0.2), rgba(63,93,255,0.2)); border: 1px solid rgba(255,46,166,0.32); border-radius: 12px; padding: 10px 16px; cursor: pointer; transition: background 0.2s; }
+        .botones a:hover, .botones button:hover { background: linear-gradient(130deg, rgba(255,46,166,0.36), rgba(63,93,255,0.35)); }
         .advertencia { color: var(--warning); font-size: 0.95rem; margin-top: 12px; }
         .oculto { display: none; }
     </style>

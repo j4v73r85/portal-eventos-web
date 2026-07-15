@@ -7,6 +7,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
@@ -37,6 +38,9 @@ const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '';
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || '';
 const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || 'plandem/perfiles';
 const CLOUDINARY_PROFILE_STORAGE_REQUIRED = process.env.CLOUDINARY_PROFILE_STORAGE_REQUIRED === 'true';
+const CLOUDINARY_STORAGE_REQUIRED = process.env.CLOUDINARY_STORAGE_REQUIRED !== 'false';
+const MIGRAR_UPLOADS_LEGACY_ON_START = process.env.MIGRAR_UPLOADS_LEGACY_ON_START !== 'false';
+const IMPORTAR_EVENTOS_EN_STARTUP = process.env.IMPORTAR_EVENTOS_EN_STARTUP !== 'false';
 const CLOUDINARY_CONFIGURADO = Boolean(
     CLOUDINARY_URL || (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET)
 );
@@ -61,6 +65,14 @@ const PAISES_PERMITIDOS = new Set([
     'US', 'CA', 'MX', 'AR', 'CO', 'PE', 'CL', 'UY', 'EC', 'BO', 'CR', 'PA', 'PR', 'VE', 'DO',
     'GT', 'SV', 'HN', 'NI', 'PY', 'BR', 'AU', 'NZ'
 ]);
+const CHAT_TERMINOS_OFENSIVOS = new Set([
+    'puta', 'puto', 'gilipollas', 'idiota', 'imbecil', 'mierda', 'joder',
+    'cabron', 'maricon', 'hdp', 'subnormal', 'estupido', 'zorra',
+    'pendejo', 'pendeja'
+]);
+const CHAT_FRASES_OFENSIVAS = ['hijo de puta'];
+const CHAT_MOTIVO_AVISO_AUTOMATICO = 'Lenguaje ofensivo detectado y reportado automaticamente a administracion.';
+const CHAT_MENSAJE_AVISO_USUARIO = 'Tu comentario ha sido reportado a administracion por lenguaje ofensivo. Si se repite, la propia administracion tomara represalias contra tu perfil.';
 
 function validarConfiguracionProduccion() {
     const isProd = process.env.NODE_ENV === 'production';
@@ -80,6 +92,10 @@ function validarConfiguracionProduccion() {
         if (!SMTP_FROM) faltantes.push('SMTP_FROM');
     }
 
+    if (CLOUDINARY_STORAGE_REQUIRED && !CLOUDINARY_CONFIGURADO) {
+        faltantes.push('CLOUDINARY_URL o CLOUDINARY_CLOUD_NAME+CLOUDINARY_API_KEY+CLOUDINARY_API_SECRET');
+    }
+
     if (faltantes.length > 0) {
         console.warn(`⚠️ Configuracion incompleta en produccion. Faltan variables: ${faltantes.join(', ')}. El servidor seguirá iniciando para evitar caídas de despliegue.`);
     }
@@ -97,7 +113,12 @@ if (OTP_EMAIL_ENABLED && !SMTP_HOST) {
     console.warn('⚠️ OTP_EMAIL_ENABLED activo sin SMTP_HOST. Configura SMTP para verificación por email.');
 }
 if (!CLOUDINARY_CONFIGURADO) {
-    console.warn('⚠️ Cloudinary no configurado. Las fotos de perfil no se persistirán en almacenamiento remoto.');
+    if (CLOUDINARY_STORAGE_REQUIRED) {
+        console.error('❌ Cloudinary es obligatorio y no está configurado. Configura CLOUDINARY_URL o CLOUDINARY_CLOUD_NAME+CLOUDINARY_API_KEY+CLOUDINARY_API_SECRET.');
+        process.exit(1);
+    } else {
+        console.warn('⚠️ Cloudinary no configurado. Se usará MongoDB para persistir multimedia pública (perfil y eventos).');
+    }
 }
 
 if (CLOUDINARY_CONFIGURADO) {
@@ -258,6 +279,32 @@ function limpiarTexto(valor, maxLen = 200) {
     return valor.trim().slice(0, maxLen);
 }
 
+function normalizarTextoModeracion(valor = '') {
+    return String(valor || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+}
+
+function detectarLenguajeOfensivo(texto = '') {
+    const normalizado = normalizarTextoModeracion(texto);
+    if (!normalizado) return [];
+
+    const encontrados = new Set();
+    const palabras = normalizado.split(/[^a-z0-9]+/).filter(Boolean);
+    palabras.forEach((palabra) => {
+        if (CHAT_TERMINOS_OFENSIVOS.has(palabra)) {
+            encontrados.add(palabra);
+        }
+    });
+    CHAT_FRASES_OFENSIVAS.forEach((frase) => {
+        if (normalizado.includes(frase)) {
+            encontrados.add(frase);
+        }
+    });
+    return Array.from(encontrados);
+}
+
 function normalizarListaOpciones(lista = [], permitidas = []) {
     let listaProcesada = lista;
     if (typeof listaProcesada === 'string') {
@@ -327,6 +374,250 @@ async function subirFotoPerfilRemota(rutaArchivo, usuarioId) {
         ]
     });
     return upload.secure_url;
+}
+
+async function guardarArchivoPublicoEnMongo(archivo, { tipo = 'evento', usuarioId = null } = {}) {
+    const contenido = await fs.promises.readFile(archivo.path);
+    const nombreOriginal = limpiarTexto(archivo.originalname || '', 180);
+    const mediaGuardada = await MediaPublica.create({
+        tipo,
+        mimeType: archivo.mimetype || 'application/octet-stream',
+        nombreOriginal,
+        tamanoBytes: Number(archivo.size || contenido.length || 0),
+        usuarioId: usuarioId && mongoose.Types.ObjectId.isValid(String(usuarioId)) ? usuarioId : null,
+        datos: contenido
+    });
+    const nombreSegmento = encodeURIComponent(nombreOriginal || 'archivo');
+    return `/api/media/${mediaGuardada._id}/${nombreSegmento}`;
+}
+
+async function almacenarArchivoPublico(archivo, opciones = {}) {
+    const {
+        tipo = 'evento',
+        usuarioId = null,
+        cloudinaryFolder = CLOUDINARY_FOLDER,
+        cloudinaryResourceType = 'auto',
+        cloudinaryTransformations = [],
+        removeSourceFile = true
+    } = opciones;
+
+    if (!archivo || !archivo.path) {
+        throw new Error('Archivo inválido para almacenamiento público.');
+    }
+
+    try {
+        if (!CLOUDINARY_CONFIGURADO && CLOUDINARY_STORAGE_REQUIRED) {
+            throw new Error('Cloudinary es obligatorio para guardar archivos en este entorno. Configura CLOUDINARY_URL o credenciales Cloudinary.');
+        }
+
+        if (CLOUDINARY_CONFIGURADO) {
+            try {
+                const uploadResult = await cloudinary.uploader.upload(archivo.path, {
+                    folder: cloudinaryFolder,
+                    resource_type: cloudinaryResourceType,
+                    transformation: cloudinaryTransformations
+                });
+                return uploadResult.secure_url;
+            } catch (errorCloudinary) {
+                if (CLOUDINARY_STORAGE_REQUIRED || (tipo === 'perfil' && CLOUDINARY_PROFILE_STORAGE_REQUIRED)) {
+                    throw new Error('No se pudo guardar el archivo en Cloudinary. Revisa configuración y límites de tu cuenta.');
+                }
+            }
+        }
+
+        return await guardarArchivoPublicoEnMongo(archivo, { tipo, usuarioId });
+    } finally {
+        if (removeSourceFile) {
+            fs.promises.unlink(archivo.path).catch(() => {});
+        }
+    }
+}
+
+const EXTENSION_A_MIME = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.ogg': 'audio/ogg',
+    '.m4a': 'audio/mp4'
+};
+
+function obtenerMimePorRutaArchivo(rutaArchivo = '') {
+    const ext = path.extname(String(rutaArchivo || '')).toLowerCase();
+    return EXTENSION_A_MIME[ext] || 'application/octet-stream';
+}
+
+async function migrarUrlLegacySiAplica(url, opciones = {}) {
+    if (!url || typeof url !== 'string' || !url.startsWith('/uploads/')) {
+        return { url, migrada: false, faltante: false };
+    }
+
+    const rutaRelativa = url.replace(/^\/+/, '');
+    const rutaAbsoluta = path.join(__dirname, rutaRelativa);
+
+    let statArchivo;
+    try {
+        statArchivo = await fs.promises.stat(rutaAbsoluta);
+    } catch (error) {
+        return { url, migrada: false, faltante: true };
+    }
+
+    if (!statArchivo.isFile()) {
+        return { url, migrada: false, faltante: true };
+    }
+
+    const archivoLegacy = {
+        path: rutaAbsoluta,
+        mimetype: obtenerMimePorRutaArchivo(rutaAbsoluta),
+        originalname: path.basename(rutaAbsoluta),
+        size: statArchivo.size
+    };
+
+    const nuevaUrl = await almacenarArchivoPublico(archivoLegacy, {
+        ...opciones,
+        removeSourceFile: false
+    });
+
+    return { url: nuevaUrl, migrada: true, faltante: false };
+}
+
+async function migrarMultimediaLegacyUploads() {
+    const resumen = {
+        usuariosActualizados: 0,
+        eventosActualizados: 0,
+        urlsMigradas: 0,
+        urlsFaltantes: 0,
+        errores: 0
+    };
+
+    const usuarios = await Usuario.find({ fotos: { $elemMatch: { $regex: '^/uploads/' } } }).select('fotos');
+    for (const usuario of usuarios) {
+        let cambioUsuario = false;
+        const nuevasFotos = [];
+
+        for (const foto of (usuario.fotos || [])) {
+            try {
+                const resultado = await migrarUrlLegacySiAplica(foto, {
+                    tipo: 'perfil',
+                    usuarioId: usuario._id,
+                    cloudinaryFolder: CLOUDINARY_FOLDER,
+                    cloudinaryResourceType: 'image',
+                    cloudinaryTransformations: [
+                        { width: 1080, height: 1080, crop: 'limit' },
+                        { fetch_format: 'auto' },
+                        { quality: 'auto:good' }
+                    ]
+                });
+                if (resultado.migrada) {
+                    resumen.urlsMigradas += 1;
+                    cambioUsuario = true;
+                }
+                if (resultado.faltante) resumen.urlsFaltantes += 1;
+                nuevasFotos.push(resultado.url);
+            } catch (error) {
+                resumen.errores += 1;
+                nuevasFotos.push(foto);
+            }
+        }
+
+        if (cambioUsuario) {
+            usuario.fotos = nuevasFotos;
+            await usuario.save();
+            resumen.usuariosActualizados += 1;
+        }
+    }
+
+    const eventos = await Evento.find({
+        $or: [
+            { multimediaUrl: { $regex: '^/uploads/' } },
+            { galeria: { $elemMatch: { $regex: '^/uploads/' } } },
+            { 'audiosEnVivo.audioUrl': { $regex: '^/uploads/' } }
+        ]
+    }).select('multimediaUrl galeria audiosEnVivo');
+
+    for (const evento of eventos) {
+        let cambioEvento = false;
+
+        if (evento.multimediaUrl) {
+            try {
+                const multimediaMigrada = await migrarUrlLegacySiAplica(evento.multimediaUrl, {
+                    tipo: 'evento',
+                    cloudinaryFolder: `${CLOUDINARY_FOLDER}/eventos`,
+                    cloudinaryResourceType: 'auto'
+                });
+                if (multimediaMigrada.migrada) {
+                    evento.multimediaUrl = multimediaMigrada.url;
+                    resumen.urlsMigradas += 1;
+                    cambioEvento = true;
+                }
+                if (multimediaMigrada.faltante) resumen.urlsFaltantes += 1;
+            } catch (error) {
+                resumen.errores += 1;
+            }
+        }
+
+        if (Array.isArray(evento.galeria) && evento.galeria.length > 0) {
+            const galeriaNueva = [];
+            let cambioGaleria = false;
+            for (const itemUrl of evento.galeria) {
+                try {
+                    const itemMigrado = await migrarUrlLegacySiAplica(itemUrl, {
+                        tipo: 'galeria',
+                        cloudinaryFolder: `${CLOUDINARY_FOLDER}/eventos/galeria`,
+                        cloudinaryResourceType: 'auto'
+                    });
+                    if (itemMigrado.migrada) {
+                        resumen.urlsMigradas += 1;
+                        cambioGaleria = true;
+                    }
+                    if (itemMigrado.faltante) resumen.urlsFaltantes += 1;
+                    galeriaNueva.push(itemMigrado.url);
+                } catch (error) {
+                    resumen.errores += 1;
+                    galeriaNueva.push(itemUrl);
+                }
+            }
+            if (cambioGaleria) {
+                evento.galeria = galeriaNueva;
+                cambioEvento = true;
+            }
+        }
+
+        if (Array.isArray(evento.audiosEnVivo) && evento.audiosEnVivo.length > 0) {
+            let cambioAudio = false;
+            for (const audio of evento.audiosEnVivo) {
+                try {
+                    const audioMigrado = await migrarUrlLegacySiAplica(audio.audioUrl, {
+                        tipo: 'audio',
+                        cloudinaryFolder: `${CLOUDINARY_FOLDER}/eventos/audio`,
+                        cloudinaryResourceType: 'auto'
+                    });
+                    if (audioMigrado.migrada) {
+                        audio.audioUrl = audioMigrado.url;
+                        resumen.urlsMigradas += 1;
+                        cambioAudio = true;
+                    }
+                    if (audioMigrado.faltante) resumen.urlsFaltantes += 1;
+                } catch (error) {
+                    resumen.errores += 1;
+                }
+            }
+            if (cambioAudio) cambioEvento = true;
+        }
+
+        if (cambioEvento) {
+            await evento.save();
+            resumen.eventosActualizados += 1;
+        }
+    }
+
+    return resumen;
 }
 
 function normalizarUbicacionEvento(ubicacion) {
@@ -542,6 +833,12 @@ function requerirPromotorAprobado(req, res, next) {
     return res.status(403).json({ error: 'Solo promotores verificados pueden realizar esta acción.' });
 }
 
+function puedeMarcarEventoComoPremium(usuario) {
+    if (!usuario) return false;
+    if (usuario.esAdmin === true && esSuperadminEmail(usuario.email)) return true;
+    return usuario.esPremium === true;
+}
+
 // ==========================================
 // ESQUEMAS DE BASE DE DATOS
 // ==========================================
@@ -684,6 +981,17 @@ const SeguridadLogSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const SeguridadLog = mongoose.model('SeguridadLog', SeguridadLogSchema);
+
+const MediaPublicaSchema = new mongoose.Schema({
+    tipo: { type: String, enum: ['perfil', 'evento', 'galeria', 'audio', 'otro'], default: 'otro' },
+    mimeType: { type: String, default: 'application/octet-stream' },
+    nombreOriginal: { type: String, default: '' },
+    tamanoBytes: { type: Number, default: 0 },
+    usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
+    datos: { type: Buffer, required: true }
+}, { timestamps: true });
+
+const MediaPublica = mongoose.model('MediaPublica', MediaPublicaSchema);
 
 app.use(autenticarSesionOpcional);
 
@@ -944,6 +1252,23 @@ function puedeGestionarEventos(usuario) {
     return (usuario.esAdmin === true && esSuperadminEmail(usuario.email)) || usuario.esModerador === true;
 }
 
+function lanzarImportacionEventosEnSegundoPlano(origen = 'startup') {
+    if (process.env.NODE_ENV !== 'production' || !IMPORTAR_EVENTOS_EN_STARTUP) return;
+    const scriptPath = path.join(__dirname, 'scripts', 'import-eventos-diario.js');
+    const child = spawn(process.execPath, [scriptPath], {
+        cwd: __dirname,
+        env: process.env,
+        stdio: 'inherit',
+        shell: false
+    });
+    child.on('exit', (code) => {
+        console.log(`📥 Importación de eventos (${origen}) finalizada con código ${code}`);
+    });
+    child.on('error', (error) => {
+        console.error(`⚠️ Error lanzando importación de eventos (${origen}):`, error.message);
+    });
+}
+
 // Conexión a MongoDB y sincronización de índices
 mongoose.connect(MONGODB_URI)
   .then(async () => {
@@ -952,6 +1277,7 @@ mongoose.connect(MONGODB_URI)
           await Evento.syncIndexes();
           await Usuario.syncIndexes();
           await SeguridadLog.syncIndexes();
+          await MediaPublica.syncIndexes();
           
           if (SUPERADMIN_PASSWORD) {
               const salt = await bcrypt.genSalt(10);
@@ -992,6 +1318,22 @@ mongoose.connect(MONGODB_URI)
               { $set: { emailVerificado: true } }
           );
       } catch (e) { console.error('Error al inicializar datos:', e); }
+
+      if (MIGRAR_UPLOADS_LEGACY_ON_START) {
+          setTimeout(() => {
+              migrarMultimediaLegacyUploads()
+                  .then((resumen) => {
+                      console.log('✅ Migración legacy /uploads completada:', resumen);
+                  })
+                  .catch((error) => {
+                      console.error('⚠️ Error en migración legacy /uploads:', error.message);
+                  });
+          }, 1500);
+      }
+
+      setTimeout(() => {
+          lanzarImportacionEventosEnSegundoPlano('startup');
+      }, 5000);
   })
   .catch(err => console.error('❌ Error de conexión:', err));
 
@@ -1004,6 +1346,53 @@ app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 app.get('/api/health', (req, res) => {
     res.json({ ok: true, service: 'portal-eventos', timestamp: new Date().toISOString() });
 });
+
+app.post('/api/admin/importar-eventos', requerirAdmin, async (req, res) => {
+    try {
+        const { spawn } = require('child_process');
+        const scriptPath = path.join(__dirname, 'scripts', 'import-eventos-diario.js');
+        const child = spawn(process.execPath, [scriptPath], {
+            cwd: __dirname,
+            env: process.env,
+            stdio: 'pipe',
+            shell: false
+        });
+
+        let salida = '';
+        let errores = '';
+        child.stdout.on('data', (chunk) => { salida += chunk.toString(); });
+        child.stderr.on('data', (chunk) => { errores += chunk.toString(); });
+
+        child.on('close', (code) => {
+            res.json({ success: code === 0, code, salida, errores });
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+async function servirMediaPublica(req, res) {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(404).send('Media no encontrada.');
+        }
+
+        const media = await MediaPublica.findById(id).select('mimeType datos');
+        if (!media) {
+            return res.status(404).send('Media no encontrada.');
+        }
+
+        res.setHeader('Content-Type', media.mimeType || 'application/octet-stream');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.send(media.datos);
+    } catch (error) {
+        return res.status(500).send('Error al servir el archivo multimedia.');
+    }
+}
+
+app.get('/api/media/:id', servirMediaPublica);
+app.get('/api/media/:id/:nombre', servirMediaPublica);
 
 app.get('/api/eventos', async (req, res) => {
     try {
@@ -1076,7 +1465,11 @@ app.post('/api/eventos', requerirSesion, requerirPromotorAprobado, upload.fields
 
         const datosEvento = { ...req.body };
         
-        datosEvento.esPremium = req.body.esPremium === 'true' || req.body.esPremium === true;
+        const quierePremium = req.body.esPremium === 'true' || req.body.esPremium === true;
+        if (quierePremium && !puedeMarcarEventoComoPremium(req.authUser)) {
+            return res.status(403).json({ error: 'Solo promotores premium o superadmin pueden crear eventos premium.' });
+        }
+        datosEvento.esPremium = quierePremium;
         const ubicacionNormalizada = normalizarUbicacionEvento(ubicacion);
         if (!ubicacionNormalizada) {
             return res.status(400).json({ error: 'Debes seleccionar una ubicación válida desde las sugerencias.' });
@@ -1085,10 +1478,22 @@ app.post('/api/eventos', requerirSesion, requerirPromotorAprobado, upload.fields
         
         if (req.files) {
             if (req.files.multimedia && req.files.multimedia[0]) {
-                datosEvento.multimediaUrl = `/uploads/${req.files.multimedia[0].filename}`;
+                datosEvento.multimediaUrl = await almacenarArchivoPublico(req.files.multimedia[0], {
+                    tipo: 'evento',
+                    usuarioId: req.authUser?._id,
+                    cloudinaryFolder: `${CLOUDINARY_FOLDER}/eventos`,
+                    cloudinaryResourceType: 'auto'
+                });
             }
             if (req.files.galeria) {
-                datosEvento.galeria = req.files.galeria.map(file => `/uploads/${file.filename}`);
+                datosEvento.galeria = await Promise.all(
+                    req.files.galeria.map((file) => almacenarArchivoPublico(file, {
+                        tipo: 'galeria',
+                        usuarioId: req.authUser?._id,
+                        cloudinaryFolder: `${CLOUDINARY_FOLDER}/eventos/galeria`,
+                        cloudinaryResourceType: 'auto'
+                    }))
+                );
             }
         }
 
@@ -1110,7 +1515,11 @@ app.put('/api/eventos/:id', requerirSesion, upload.fields([{ name: 'multimedia',
         const datosActualizados = { ...req.body };
 
         if (req.body.esPremium !== undefined) {
-            datosActualizados.esPremium = req.body.esPremium === 'true' || req.body.esPremium === true;
+            const quierePremium = req.body.esPremium === 'true' || req.body.esPremium === true;
+            if (quierePremium && !puedeMarcarEventoComoPremium(req.authUser)) {
+                return res.status(403).json({ error: 'Solo promotores premium o superadmin pueden marcar eventos como premium.' });
+            }
+            datosActualizados.esPremium = quierePremium;
         }
 
         if (ubicacion !== undefined) {
@@ -1123,10 +1532,22 @@ app.put('/api/eventos/:id', requerirSesion, upload.fields([{ name: 'multimedia',
 
         if (req.files) {
             if (req.files['multimedia'] && req.files['multimedia'][0]) {
-                datosActualizados.multimediaUrl = `/uploads/${req.files['multimedia'][0].filename}`;
+                datosActualizados.multimediaUrl = await almacenarArchivoPublico(req.files['multimedia'][0], {
+                    tipo: 'evento',
+                    usuarioId: req.authUser?._id,
+                    cloudinaryFolder: `${CLOUDINARY_FOLDER}/eventos`,
+                    cloudinaryResourceType: 'auto'
+                });
             }
             if (req.files['galeria']) {
-                const nuevasFotos = req.files['galeria'].map(file => `/uploads/${file.filename}`);
+                const nuevasFotos = await Promise.all(
+                    req.files['galeria'].map((file) => almacenarArchivoPublico(file, {
+                        tipo: 'galeria',
+                        usuarioId: req.authUser?._id,
+                        cloudinaryFolder: `${CLOUDINARY_FOLDER}/eventos/galeria`,
+                        cloudinaryResourceType: 'auto'
+                    }))
+                );
                 datosActualizados.galeria = nuevasFotos;
             }
         }
@@ -1318,28 +1739,39 @@ app.post('/api/red-social/accion', requerirSesion, async (req, res) => {
         if (String(objetivoId) === usuarioId) return res.status(400).json({ error: 'No puedes aplicar esta acción sobre tu propio perfil.' });
 
         const [yo, objetivo] = await Promise.all([
-            Usuario.findById(usuarioId).select('nombre seguidores siguiendo amigos solicitudesAmistadEnviadas solicitudesAmistadRecibidas'),
-            Usuario.findById(objetivoId).select('nombre seguidores siguiendo amigos solicitudesAmistadEnviadas solicitudesAmistadRecibidas')
+            Usuario.findById(usuarioId).select('nombre tipoUsuario seguidores siguiendo amigos solicitudesAmistadEnviadas solicitudesAmistadRecibidas notificacionesSociales'),
+            Usuario.findById(objetivoId).select('nombre tipoUsuario seguidores siguiendo amigos solicitudesAmistadEnviadas solicitudesAmistadRecibidas')
         ]);
 
         if (!yo || !objetivo) return res.status(404).json({ error: 'Usuario no encontrado.' });
 
         const metaRespuesta = { mensaje: '', relacion: null };
-        const misSeguidores = normalizarIdLista(yo.seguidores || []);
-        const miSiguiendo = normalizarIdLista(yo.siguiendo || []);
-        const misAmigos = normalizarIdLista(yo.amigos || []);
-        const solicitudesEnviadas = normalizarIdLista(yo.solicitudesAmistadEnviadas || []);
-        const solicitudesRecibidas = normalizarIdLista(yo.solicitudesAmistadRecibidas || []);
+        let misSeguidores = normalizarIdLista(yo.seguidores || []);
+        let miSiguiendo = normalizarIdLista(yo.siguiendo || []);
+        let misAmigos = normalizarIdLista(yo.amigos || []);
+        let solicitudesEnviadas = normalizarIdLista(yo.solicitudesAmistadEnviadas || []);
+        let solicitudesRecibidas = normalizarIdLista(yo.solicitudesAmistadRecibidas || []);
+        let misNotificaciones = Array.isArray(yo.notificacionesSociales) ? yo.notificacionesSociales.slice() : [];
 
-        const objetivoSeguidores = normalizarIdLista(objetivo.seguidores || []);
-        const objetivoSiguiendo = normalizarIdLista(objetivo.siguiendo || []);
-        const objetivoAmigos = normalizarIdLista(objetivo.amigos || []);
-        const objetivoSolicitudesEnviadas = normalizarIdLista(objetivo.solicitudesAmistadEnviadas || []);
-        const objetivoSolicitudesRecibidas = normalizarIdLista(objetivo.solicitudesAmistadRecibidas || []);
+        let objetivoSeguidores = normalizarIdLista(objetivo.seguidores || []);
+        let objetivoSiguiendo = normalizarIdLista(objetivo.siguiendo || []);
+        let objetivoAmigos = normalizarIdLista(objetivo.amigos || []);
+        let objetivoSolicitudesEnviadas = normalizarIdLista(objetivo.solicitudesAmistadEnviadas || []);
+        let objetivoSolicitudesRecibidas = normalizarIdLista(objetivo.solicitudesAmistadRecibidas || []);
 
         const quitarElemento = (lista, valor) => lista.filter((item) => String(item) !== String(valor));
         const agregarElemento = (lista, valor) => {
             if (!lista.some((item) => String(item) === String(valor))) lista.push(valor);
+        };
+        const limpiarNotificacionesSolicitudRespondida = () => {
+            misNotificaciones = misNotificaciones.filter((item) => {
+                const tipo = String(item?.tipo || '');
+                if (tipo !== 'amistad') return true;
+                const origenCoincide = String(item?.origenUsuarioId || '') === String(objetivoId);
+                const titulo = String(item?.titulo || '').toLowerCase();
+                const esSolicitudPendiente = titulo.includes('solicitud de amistad') && !titulo.includes('aceptada');
+                return !(origenCoincide && esSolicitudPendiente);
+            });
         };
 
         if (accion === 'seguir') {
@@ -1355,27 +1787,46 @@ app.post('/api/red-social/accion', requerirSesion, async (req, res) => {
                 leida: false
             });
         } else if (accion === 'dejar_de_seguir') {
-            yo.siguiendo = quitarElemento(miSiguiendo, objetivoId);
-            objetivo.seguidores = quitarElemento(objetivoSeguidores, yo._id);
+            miSiguiendo = quitarElemento(miSiguiendo, objetivoId);
+            objetivoSeguidores = quitarElemento(objetivoSeguidores, yo._id);
             metaRespuesta.mensaje = `Has dejado de seguir a ${objetivo.nombre}.`;
         } else if (accion === 'solicitar_amistad') {
             if (misAmigos.includes(String(objetivoId))) {
                 return res.json({ success: true, mensaje: 'Ya sois amigos.', relacion: obtenerEstadoRelacionSocial(yo, objetivoId) });
             }
-            agregarElemento(solicitudesEnviadas, objetivoId);
-            agregarElemento(objetivoSolicitudesRecibidas, yo._id);
-            metaRespuesta.mensaje = `Solicitud de amistad enviada a ${objetivo.nombre}.`;
-            await notificarRelacionSocial(objetivoId, {
-                tipo: 'amistad',
-                titulo: 'Nueva solicitud de amistad',
-                mensaje: `${yo.nombre} te ha enviado una solicitud de amistad.`,
-                origenUsuarioId: yo._id,
-                origenUsuarioNombre: yo.nombre,
-                leida: false
-            });
+            const ambosNoPromotores = yo.tipoUsuario !== 'PROMOTOR' && objetivo.tipoUsuario !== 'PROMOTOR';
+            if (ambosNoPromotores) {
+                agregarElemento(misAmigos, objetivoId);
+                agregarElemento(objetivoAmigos, yo._id);
+                solicitudesEnviadas = quitarElemento(solicitudesEnviadas, objetivoId);
+                solicitudesRecibidas = quitarElemento(solicitudesRecibidas, objetivoId);
+                objetivoSolicitudesEnviadas = quitarElemento(objetivoSolicitudesEnviadas, yo._id);
+                objetivoSolicitudesRecibidas = quitarElemento(objetivoSolicitudesRecibidas, yo._id);
+                metaRespuesta.mensaje = `${objetivo.nombre} ha sido agregado directamente como amistad.`;
+                await notificarRelacionSocial(objetivoId, {
+                    tipo: 'amistad',
+                    titulo: 'Nueva amistad directa',
+                    mensaje: `${yo.nombre} ha conectado contigo directamente.`,
+                    origenUsuarioId: yo._id,
+                    origenUsuarioNombre: yo.nombre,
+                    leida: false
+                });
+            } else {
+                agregarElemento(solicitudesEnviadas, objetivoId);
+                agregarElemento(objetivoSolicitudesRecibidas, yo._id);
+                metaRespuesta.mensaje = `Solicitud de amistad enviada a ${objetivo.nombre}.`;
+                await notificarRelacionSocial(objetivoId, {
+                    tipo: 'amistad',
+                    titulo: 'Nueva solicitud de amistad',
+                    mensaje: `${yo.nombre} te ha enviado una solicitud de amistad.`,
+                    origenUsuarioId: yo._id,
+                    origenUsuarioNombre: yo.nombre,
+                    leida: false
+                });
+            }
         } else if (accion === 'cancelar_solicitud_amistad') {
-            yo.solicitudesAmistadEnviadas = quitarElemento(solicitudesEnviadas, objetivoId);
-            objetivo.solicitudesAmistadRecibidas = quitarElemento(objetivoSolicitudesRecibidas, yo._id);
+            solicitudesEnviadas = quitarElemento(solicitudesEnviadas, objetivoId);
+            objetivoSolicitudesRecibidas = quitarElemento(objetivoSolicitudesRecibidas, yo._id);
             metaRespuesta.mensaje = `Solicitud cancelada.`;
         } else if (accion === 'aceptar_solicitud_amistad') {
             if (!solicitudesRecibidas.includes(String(objetivoId))) {
@@ -1383,10 +1834,11 @@ app.post('/api/red-social/accion', requerirSesion, async (req, res) => {
             }
             agregarElemento(misAmigos, objetivoId);
             agregarElemento(objetivoAmigos, yo._id);
-            yo.solicitudesAmistadRecibidas = quitarElemento(solicitudesRecibidas, objetivoId);
-            yo.solicitudesAmistadEnviadas = quitarElemento(solicitudesEnviadas, objetivoId);
-            objetivo.solicitudesAmistadEnviadas = quitarElemento(objetivoSolicitudesEnviadas, yo._id);
-            objetivo.solicitudesAmistadRecibidas = quitarElemento(objetivoSolicitudesRecibidas, yo._id);
+            solicitudesRecibidas = quitarElemento(solicitudesRecibidas, objetivoId);
+            solicitudesEnviadas = quitarElemento(solicitudesEnviadas, objetivoId);
+            objetivoSolicitudesEnviadas = quitarElemento(objetivoSolicitudesEnviadas, yo._id);
+            objetivoSolicitudesRecibidas = quitarElemento(objetivoSolicitudesRecibidas, yo._id);
+            limpiarNotificacionesSolicitudRespondida();
             metaRespuesta.mensaje = `Ahora eres amigo de ${objetivo.nombre}.`;
             await notificarRelacionSocial(objetivoId, {
                 tipo: 'amistad',
@@ -1397,12 +1849,13 @@ app.post('/api/red-social/accion', requerirSesion, async (req, res) => {
                 leida: false
             });
         } else if (accion === 'rechazar_solicitud_amistad') {
-            yo.solicitudesAmistadRecibidas = quitarElemento(solicitudesRecibidas, objetivoId);
-            objetivo.solicitudesAmistadEnviadas = quitarElemento(objetivoSolicitudesEnviadas, yo._id);
+            solicitudesRecibidas = quitarElemento(solicitudesRecibidas, objetivoId);
+            objetivoSolicitudesEnviadas = quitarElemento(objetivoSolicitudesEnviadas, yo._id);
+            limpiarNotificacionesSolicitudRespondida();
             metaRespuesta.mensaje = `Solicitud rechazada.`;
         } else if (accion === 'dejar_amigo') {
-            yo.amigos = quitarElemento(misAmigos, objetivoId);
-            objetivo.amigos = quitarElemento(objetivoAmigos, yo._id);
+            misAmigos = quitarElemento(misAmigos, objetivoId);
+            objetivoAmigos = quitarElemento(objetivoAmigos, yo._id);
             metaRespuesta.mensaje = `Has dejado de ser amigo de ${objetivo.nombre}.`;
         } else {
             return res.status(400).json({ error: 'Acción social no soportada.' });
@@ -1413,6 +1866,7 @@ app.post('/api/red-social/accion', requerirSesion, async (req, res) => {
         yo.amigos = normalizarIdLista(misAmigos);
         yo.solicitudesAmistadEnviadas = normalizarIdLista(solicitudesEnviadas);
         yo.solicitudesAmistadRecibidas = normalizarIdLista(solicitudesRecibidas);
+        yo.notificacionesSociales = misNotificaciones;
 
         objetivo.siguiendo = normalizarIdLista(objetivoSiguiendo);
         objetivo.seguidores = normalizarIdLista(objetivoSeguidores);
@@ -1816,6 +2270,7 @@ app.post('/api/eventos/:id/chat', requerirSesion, async (req, res) => {
 
         if (!usuarioId) return res.status(401).json({ error: 'Debes estar autenticado para enviar mensajes.' });
         if (!texto || texto.trim().length === 0) return res.status(400).json({ error: 'El mensaje no puede estar vacío.' });
+        const textoLimpio = texto.trim();
 
         if (String(req.authUser._id) !== String(usuarioId)) {
             return res.status(403).json({ error: 'No autorizado para enviar mensajes en nombre de otro usuario.' });
@@ -1836,9 +2291,44 @@ app.post('/api/eventos/:id/chat', requerirSesion, async (req, res) => {
             return res.status(403).json({ error: 'Has sido silenciado en este chat.' });
         }
 
+        const terminosOfensivos = detectarLenguajeOfensivo(textoLimpio);
+        if (!adminValido && terminosOfensivos.length > 0) {
+            const avisosPrevios = moderacion.avisados.filter((item) => String(item.usuarioId) === String(usuarioId)).length;
+            moderacion.avisados.push({
+                usuarioId,
+                autor: autor || req.authUser?.nombre || 'Usuario',
+                fecha: new Date(),
+                adminId: null,
+                motivo: CHAT_MOTIVO_AVISO_AUTOMATICO
+            });
+            eventoActual.chatModeration = moderacion;
+            await eventoActual.save();
+
+            await registrarEventoSeguridad(
+                req,
+                'chat_lenguaje_ofensivo',
+                'bloqueado',
+                'Mensaje bloqueado por detección automática de lenguaje ofensivo.',
+                {
+                    meta: {
+                        eventoId: id,
+                        usuarioId,
+                        terminos: terminosOfensivos,
+                        avisosTotales: avisosPrevios + 1,
+                        texto: textoLimpio.slice(0, 200)
+                    }
+                }
+            );
+
+            return res.status(422).json({
+                error: CHAT_MENSAJE_AVISO_USUARIO,
+                ...(await construirRespuestaChat(eventoActual, usuarioId, !!adminValido))
+            });
+        }
+
         const evento = await Evento.findByIdAndUpdate(
             id,
-            { $push: { chatMessages: { autor: autor || 'Anónimo', usuarioId, texto: texto.trim(), creado: new Date() } } },
+            { $push: { chatMessages: { autor: autor || 'Anónimo', usuarioId, texto: textoLimpio, creado: new Date() } } },
             { new: true }
         );
 
@@ -2022,20 +2512,18 @@ app.put('/api/usuarios/:id', requerirSesion, upload.single('fotoPerfil'), async 
         }
         
         if (req.file) {
-            try {
-                const fotoUrl = await subirFotoPerfilRemota(req.file.path, id);
-                datosActualizados.fotos = [fotoUrl];
-            } catch (errorSubida) {
-                if (CLOUDINARY_PROFILE_STORAGE_REQUIRED) {
-                    return res.status(500).json({
-                        error: 'No se pudo guardar la foto en almacenamiento remoto. Revisa la configuración de Cloudinary.'
-                    });
-                }
-                const fotoUrlLocal = `/uploads/${req.file.filename}`;
-                datosActualizados.fotos = [fotoUrlLocal];
-            } finally {
-                fs.promises.unlink(req.file.path).catch(() => {});
-            }
+            const fotoUrl = await almacenarArchivoPublico(req.file, {
+                tipo: 'perfil',
+                usuarioId: id,
+                cloudinaryFolder: CLOUDINARY_FOLDER,
+                cloudinaryResourceType: 'image',
+                cloudinaryTransformations: [
+                    { width: 1080, height: 1080, crop: 'limit' },
+                    { fetch_format: 'auto' },
+                    { quality: 'auto:good' }
+                ]
+            });
+            datosActualizados.fotos = [fotoUrl];
         }
 
         const usuarioActualizado = await Usuario.findByIdAndUpdate(id, datosActualizados, { new: true });
@@ -2087,4 +2575,13 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 Servidor levantado en puerto ${PORT}`);
+});
+
+app.post('/api/admin/migrar-uploads-legacy', requerirAdmin, async (req, res) => {
+    try {
+        const resumen = await migrarMultimediaLegacyUploads();
+        res.json({ success: true, resumen });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });

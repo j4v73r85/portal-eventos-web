@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "import:eventos": "node scripts/import-eventos-diario.js",
     "secure:setup": "node scripts/bootstrap-security.js",
     "secure:check": "node scripts/security-doctor.js",
     "secure:reset": "node scripts/bootstrap-security.js --force",

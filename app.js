@@ -13,6 +13,7 @@ let temporizadorBarraProgreso = null;
 let eventoPendienteChatConsent = null;
 let perfilSeccionActual = 'favoritos';
 let perfilFiltroActual = 'todos';
+let grupoEventosActual = 'todos';
 let tokenSesion = null;
 let emailPendienteVerificacion = '';
 let redSocialUsuarios = [];
@@ -80,6 +81,66 @@ const PLANES_OPCIONES = [
     'Eventos premium'
 ];
 
+function normalizarClaveGrupo(valor = '') {
+    return String(valor || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+function normalizarCategoriaGrupo(categoria = '') {
+    const texto = String(categoria || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (!texto) return 'Cultura';
+    if (texto.includes('music') || texto.includes('conciert') || texto.includes('musica')) return 'Musica en vivo';
+    if (texto.includes('festival')) return 'Festivales';
+    if (texto.includes('gastr') || texto.includes('comida') || texto.includes('food')) return 'Gastronomia';
+    if (texto.includes('deport') || texto.includes('sport')) return 'Deporte';
+    if (texto.includes('nocturn') || texto.includes('fiesta') || texto.includes('party')) return 'Ocio nocturno';
+    if (texto.includes('aire libre') || texto.includes('outdoor') || texto.includes('natura') || texto.includes('ruta')) return 'Aire libre';
+    if (texto.includes('familia') || texto.includes('ninos') || texto.includes('infantil') || texto.includes('kids')) return 'Familia';
+    if (texto.includes('bienestar') || texto.includes('wellness') || texto.includes('salud') || texto.includes('yoga')) return 'Bienestar';
+    if (texto.includes('tecnolog') || texto.includes('tech') || texto.includes('digital')) return 'Tecnologia';
+    if (texto.includes('taller') || texto.includes('arte') || texto.includes('workshop')) return 'Arte y talleres';
+    if (texto.includes('viaje') || texto.includes('turism') || texto.includes('escapada')) return 'Viajes';
+    if (texto.includes('network') || texto.includes('negocio') || texto.includes('feria')) return 'Networking';
+    if (texto.includes('premium') || texto.includes('vip')) return 'Eventos premium';
+    return 'Cultura';
+}
+
+function obtenerGrupoEvento(evento = {}) {
+    if (evento.esPremium) return 'Eventos premium';
+    return normalizarCategoriaGrupo(evento.categoria || '');
+}
+
+function obtenerEventosGenerales() {
+    return todosLosEventos.filter((evento) => !evento.esPremium);
+}
+
+function obtenerGruposEventosDisponibles() {
+    const conteo = new Map();
+    todosLosEventos.forEach((evento) => {
+        const grupo = obtenerGrupoEvento(evento);
+        conteo.set(grupo, (conteo.get(grupo) || 0) + 1);
+    });
+
+    const orden = new Map(PLANES_OPCIONES.map((grupo, indice) => [grupo, indice]));
+    return Array.from(conteo.entries())
+        .map(([grupo, total]) => ({ grupo, total }))
+        .sort((a, b) => {
+            const ordenA = orden.has(a.grupo) ? orden.get(a.grupo) : 999;
+            const ordenB = orden.has(b.grupo) ? orden.get(b.grupo) : 999;
+            if (ordenA !== ordenB) return ordenA - ordenB;
+            return a.grupo.localeCompare(b.grupo, 'es');
+        });
+}
+
+function seleccionarGrupoEventos(grupo = 'todos') {
+    grupoEventosActual = grupo;
+    renderizarListaYMapa();
+}
+
 function obtenerHeadersAutenticacion(extraHeaders = {}) {
     const headers = { ...extraHeaders };
     if (tokenSesion) {
@@ -126,11 +187,49 @@ function generarAvatarIniciales(nombre = 'Usuario', colorSemaforo = 'AMARILLO') 
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+function normalizarFotosUsuario(fotos = []) {
+    const origen = Array.isArray(fotos) ? fotos : (fotos ? [fotos] : []);
+    return origen
+        .map((item) => {
+            if (!item) return '';
+            if (typeof item === 'string') return item.trim();
+            if (typeof item === 'object') {
+                return String(item.url || item.secure_url || item.src || item.path || '').trim();
+            }
+            return '';
+        })
+        .filter(Boolean);
+}
+
+function resolverUrlMedia(url = '') {
+    const valor = String(url || '').trim();
+    if (!valor) return '';
+    if (valor.startsWith('//')) return `${window.location.protocol}${valor}`;
+    if (/^(https?:|data:|blob:)/i.test(valor)) return valor;
+    const sinPrefijoLocal = valor.replace(/^\.\//, '');
+    if (sinPrefijoLocal.startsWith('/')) return `${API_BASE}${sinPrefijoLocal}`;
+    if (/^(uploads|api)\//i.test(sinPrefijoLocal)) return `${API_BASE}/${sinPrefijoLocal}`;
+    return sinPrefijoLocal;
+}
+
 function obtenerFotoPerfil(usuario = {}) {
-    if (usuario && Array.isArray(usuario.fotos) && usuario.fotos[0]) {
-        return usuario.fotos[0];
+    const fotosNormalizadas = normalizarFotosUsuario(usuario?.fotos);
+    if (fotosNormalizadas[0]) {
+        return resolverUrlMedia(fotosNormalizadas[0]);
     }
     return generarAvatarIniciales(usuario?.nombre || 'Usuario', usuario?.colorSemaforo || 'AMARILLO');
+}
+
+function aplicarImagenPerfilEnElemento(imgEl, usuario, srcPrincipal, claseAvatar) {
+    if (!imgEl) return;
+    const srcFallback = generarAvatarIniciales(usuario?.nombre || 'Usuario', usuario?.colorSemaforo || 'AMARILLO');
+    imgEl.onerror = () => {
+        imgEl.onerror = null;
+        imgEl.src = srcFallback;
+    };
+    imgEl.classList.remove('avatar-status-verde', 'avatar-status-amarillo', 'avatar-status-rojo');
+    imgEl.classList.add(claseAvatar);
+    imgEl.src = srcPrincipal || srcFallback;
 }
 
 function asegurarAvatarCabeceraPerfil() {
@@ -537,6 +636,7 @@ async function cargarPortal() {
         headers: obtenerHeadersAutenticacion()
     });
     todosLosEventos = await res.json();
+    grupoEventosActual = 'todos';
     eventosPremiumTinder = todosLosEventos.filter(ev => ev.esPremium === true);
     renderizarListaYMapa();
     renderizarMisEventosGuardados();
@@ -545,15 +645,56 @@ async function cargarPortal() {
 
 function renderizarListaYMapa() {
     const contenedor = document.getElementById('eventosContenedor');
+    if (!contenedor) return;
+    let tabs = document.getElementById('tabsEventosGrupos');
+    if (!tabs && contenedor.parentElement) {
+        tabs = document.createElement('div');
+        tabs.id = 'tabsEventosGrupos';
+        tabs.className = 'event-tabs';
+        contenedor.parentElement.insertBefore(tabs, contenedor);
+    }
+
+    const eventosGenerales = obtenerEventosGenerales();
+    const gruposDisponibles = obtenerGruposEventosDisponibles();
+    if (grupoEventosActual !== 'todos' && !gruposDisponibles.some((item) => item.grupo === grupoEventosActual)) {
+        grupoEventosActual = 'todos';
+    }
+
+    const eventosVisibles = grupoEventosActual === 'todos'
+        ? todosLosEventos
+        : grupoEventosActual === 'Eventos premium'
+            ? todosLosEventos.filter((evento) => evento.esPremium)
+            : eventosGenerales.filter((evento) => obtenerGrupoEvento(evento) === grupoEventosActual);
+
+    const pestañasHtml = [
+        `<button type="button" class="event-tab ${grupoEventosActual === 'todos' ? 'activo' : ''}" onclick="seleccionarGrupoEventos('todos')">Todos <span>${eventosGenerales.length}</span></button>`,
+        ...gruposDisponibles.map(({ grupo, total }) => `
+            <button type="button" class="event-tab ${grupoEventosActual === grupo ? 'activo' : ''}" onclick="seleccionarGrupoEventos(${JSON.stringify(grupo)})">
+                ${escaparHtml(grupo)} <span>${total}</span>
+            </button>
+        `)
+    ].join('');
+
+    tabs.innerHTML = `
+        <div class="event-tabs-header">
+            <div>
+                <h3>Explora por grupo</h3>
+                <p>Los eventos automáticos entran como genéricos. El premium queda reservado para promotores premium o admin.</p>
+            </div>
+            <div class="event-tabs-badge">Mapa interactivo activo</div>
+        </div>
+        <div class="event-tabs-row">${pestañasHtml}</div>
+    `;
+
     contenedor.innerHTML = '';
     mapGlobal.eachLayer((layer) => {
         if (layer instanceof L.CircleMarker) mapGlobal.removeLayer(layer);
     });
-    const eventosNoPremium = todosLosEventos.filter(ev => !ev.esPremium);
-    if (eventosNoPremium.length === 0) {
-        contenedor.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No hay eventos generales disponibles.</p>';
+    if (eventosVisibles.length === 0) {
+        contenedor.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No hay eventos en este grupo por ahora.</p>';
     }
-    todosLosEventos.forEach(ev => {
+    const eventosMapa = grupoEventosActual === 'todos' ? todosLosEventos : eventosVisibles;
+    eventosMapa.forEach(ev => {
         if (ev.ubicacion?.coordenadas?.latitud) {
             const lat = ev.ubicacion.coordenadas.latitud;
             const lon = ev.ubicacion.coordenadas.longitud;
@@ -565,10 +706,10 @@ function renderizarListaYMapa() {
                 weight: 1,
                 opacity: 0.8,
                 fillOpacity: 0.35
-            }).addTo(mapGlobal).bindPopup(`<b>${ev.titulo}</b><br>🔥 Actividad Live: ${ev.afluenciaEnVivo || 0} pts`);
+            }).addTo(mapGlobal).bindPopup(`<b>${escaparHtml(ev.titulo)}</b><br>${escaparHtml(obtenerGrupoEvento(ev))}<br>🔥 Actividad Live: ${ev.afluenciaEnVivo || 0} pts`);
         }
     });
-    eventosNoPremium.forEach(ev => {
+    eventosVisibles.forEach(ev => {
         const div = document.createElement('div');
         div.className = 'card';
         div.dataset.eventoId = ev._id;
@@ -595,12 +736,14 @@ function renderizarListaYMapa() {
         } else {
             audiosHTML = '<p style="color:var(--text-muted); font-size:0.75rem;">Sin audios del ambiente aún.</p>';
         }
+        const grupoEvento = obtenerGrupoEvento(ev);
         const esOrganizador = usuarioConectado && usuarioConectado.nombre.trim().toLowerCase() === ev.organizador.trim().toLowerCase();
         const esSuperAdminLocal = esSuperAdmin();
         const botonGrabarHTML = (esOrganizador || esSuperAdminLocal)
             ? `<button class="btn-record" id="recBtn-${ev._id}" onclick="alternarGrabacion('${ev._id}')">🎤 Grabar Ambiente ${esSuperAdminLocal ? '(SúperAdmin)' : ''}</button>`
             : `<span style="font-size:0.75rem; color:var(--premium-gold); cursor:pointer; font-weight:500;" onclick="abrirModalAuth()">¿Quieres escuchar el ambiente del evento? ¡Regístrate!</span>`;
         div.innerHTML = `
+            <div class="grupo-evento-chip">${escaparHtml(grupoEvento)}</div>
             ${imgPortadaHTML}
             <div class="contenido-card">
                 <h3>${ev.titulo}</h3>
@@ -888,14 +1031,16 @@ function abrirModalPublicarEvento() {
 
 function cerrarModalSolicitudPromotor() { document.getElementById('modalSolicitudPromotor').style.display = 'none'; }
 
-async function ejecutarInteraccionDetalle(idEvento, accion, modoSocial = false, abrirConsentimiento = true) {
+async function ejecutarInteraccionDetalle(idEvento, accion, modoSocial = null, abrirConsentimiento = true) {
     if (!usuarioConectado) { alert('Debes iniciar sesión para interactuar.'); return; }
     if (accion === 'ASISTIRE' && abrirConsentimiento) {
         eventoPendienteChatConsent = idEvento;
         abrirModalChatConsent();
         return;
     }
-    const modoSocialActivo = modoSocial || document.getElementById('checkModoSocial').checked;
+    const modoSocialActivo = typeof modoSocial === 'boolean'
+        ? modoSocial
+        : document.getElementById('checkModoSocial').checked;
     try {
         const res = await fetch(`${API_BASE}/api/eventos/${idEvento}/interaccion`, {
             method: 'POST',
@@ -1471,7 +1616,11 @@ async function cargarDatosUsuario() {
         });
         if (!res.ok) return;
         const data = await res.json();
-        usuarioConectado = { ...usuarioConectado, ...data.usuario };
+        usuarioConectado = {
+            ...usuarioConectado,
+            ...data.usuario,
+            fotos: normalizarFotosUsuario(data?.usuario?.fotos || usuarioConectado?.fotos)
+        };
         guardarSesionUsuario();
         gestionarIUUsuario();
         renderizarMisEventosGuardados();
@@ -1664,7 +1813,7 @@ function abrirModalEditarPerfil() {
         rellenarVerificacionPromotorPerfil({});
     }
     if (usuarioConectado.fotos && usuarioConectado.fotos[0]) {
-        document.getElementById('previewFoto').src = usuarioConectado.fotos[0];
+        document.getElementById('previewFoto').src = resolverUrlMedia(usuarioConectado.fotos[0]);
     }
     document.getElementById('modalEditarPerfil').style.display = 'block';
 }
@@ -1737,22 +1886,28 @@ async function handleFormEditarPerfil(e) {
         });
         const data = await res.json();
         if (res.ok) {
-            // Actualizar los datos del usuario en sesión
-            usuarioConectado.tipoUsuario = data.usuario.tipoUsuario || tipoUsuario;
-            usuarioConectado.promotorAprobado = data.usuario.promotorAprobado || false;
-            usuarioConectado.solicitudPromotor = data.usuario.solicitudPromotor || solicitudPromotor;
-            usuarioConectado.verificacionPromotor = data.usuario.verificacionPromotor || (quiereSerPromotor ? verificacionPromotor : {});
-            usuarioConectado.colorSemaforo = colorSemaforo;
-            usuarioConectado.descripcionPersonal = descripcion;
-            usuarioConectado.pais = data.usuario.pais || pais;
-            usuarioConectado.direccionResidencia = data.usuario.direccionResidencia || direccionResidencia;
-            usuarioConectado.preferenciasPlanes = data.usuario.preferenciasPlanes || preferenciasPlanes;
+            // Sincroniza el usuario desde backend para evitar estados parciales en cliente.
+            usuarioConectado = {
+                ...usuarioConectado,
+                ...(data.usuario || {}),
+                tipoUsuario: data?.usuario?.tipoUsuario || tipoUsuario,
+                promotorAprobado: data?.usuario?.promotorAprobado || false,
+                solicitudPromotor: data?.usuario?.solicitudPromotor || solicitudPromotor,
+                verificacionPromotor: data?.usuario?.verificacionPromotor || (quiereSerPromotor ? verificacionPromotor : {}),
+                colorSemaforo,
+                descripcionPersonal: descripcion,
+                pais: data?.usuario?.pais || pais,
+                direccionResidencia: data?.usuario?.direccionResidencia || direccionResidencia,
+                preferenciasPlanes: data?.usuario?.preferenciasPlanes || preferenciasPlanes
+            };
             if (data.usuario.fotos && data.usuario.fotos[0]) {
-                usuarioConectado.fotos = data.usuario.fotos;
-                document.getElementById('previewFoto').src = data.usuario.fotos[0];
+                document.getElementById('previewFoto').src = resolverUrlMedia(data.usuario.fotos[0]);
             }
             guardarSesionUsuario();
             gestionarIUUsuario();
+            if (fileInput.files[0] && !(data?.usuario?.fotos && data.usuario.fotos[0])) {
+                await cargarDatosUsuario();
+            }
             alert('✅ Perfil actualizado correctamente');
             cerrarModalEditarPerfil();
             if (quiereSerPromotor && !usuarioConectado.promotorAprobado) {
@@ -2009,22 +2164,8 @@ function gestionarIUUsuario() {
     const fotoPerfil = obtenerFotoPerfil(usuarioConectado);
     const claseAvatar = obtenerClaseAvatarSemaforo(usuarioConectado.colorSemaforo || 'AMARILLO');
     const { fotoCabecera, fotoBotonPerfil } = asegurarAvatarCabeceraPerfil();
-    if (fotoCabecera) {
-        fotoCabecera.src = fotoPerfil;
-        fotoCabecera.classList.remove('avatar-status-verde', 'avatar-status-amarillo', 'avatar-status-rojo');
-        fotoCabecera.classList.add(claseAvatar);
-        fotoCabecera.onerror = () => {
-            fotoCabecera.src = generarAvatarIniciales(usuarioConectado.nombre || 'Usuario', usuarioConectado.colorSemaforo || 'AMARILLO');
-        };
-    }
-    if (fotoBotonPerfil) {
-        fotoBotonPerfil.src = fotoPerfil;
-        fotoBotonPerfil.classList.remove('avatar-status-verde', 'avatar-status-amarillo', 'avatar-status-rojo');
-        fotoBotonPerfil.classList.add(claseAvatar);
-        fotoBotonPerfil.onerror = () => {
-            fotoBotonPerfil.src = generarAvatarIniciales(usuarioConectado.nombre || 'Usuario', usuarioConectado.colorSemaforo || 'AMARILLO');
-        };
-    }
+    aplicarImagenPerfilEnElemento(fotoCabecera, usuarioConectado, fotoPerfil, claseAvatar);
+    aplicarImagenPerfilEnElemento(fotoBotonPerfil, usuarioConectado, fotoPerfil, claseAvatar);
     const sem = document.getElementById('lblSemaforo');
     if (sem) {
         sem.style.display = 'none';
@@ -2243,6 +2384,9 @@ function cargarSesionUsuario() {
     }
     try {
         usuarioConectado = JSON.parse(storedUser);
+        if (usuarioConectado) {
+            usuarioConectado.fotos = normalizarFotosUsuario(usuarioConectado.fotos);
+        }
     } catch (err) {
         console.error('Error cargando la sesión del usuario:', err);
         usuarioConectado = null;
@@ -2589,6 +2733,15 @@ async function enviarMensajeChat(e, idEvento) {
         });
         const data = await res.json();
         if (!res.ok) {
+            if (data && !Array.isArray(data)) {
+                if (data.moderation) {
+                    aplicarEstadoModeracionChat(idEvento, data.moderation || obtenerEstadoModeracionChatBase());
+                }
+                if (Array.isArray(data.messages)) {
+                    chatInfo.messages = data.messages;
+                    renderizarMensajesChat(idEvento, data.messages);
+                }
+            }
             alert(data.error || 'No se pudo enviar el mensaje.');
             return;
         }

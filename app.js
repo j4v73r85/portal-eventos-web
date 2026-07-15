@@ -898,7 +898,8 @@ function abrirModalDetalle(idEvento) {
         <div style="background:#0f172a; padding:12px; border-radius:10px; font-size:0.85rem; margin-bottom:20px; border: 1px solid #334155;">
             <p style="margin-bottom:4px;">🏢 <b>Organizador:</b> ${ev.organizador}</p>
             <p style="margin-bottom:4px;">📍 <b>Dirección Completa:</b> ${ev.ubicacion?.direccion || 'No especificada'}</p>
-            <p>💵 <b>Precio Entrada:</b> <span style="color:#10b981; font-weight:bold;">${ev.precio === 0 ? 'Gratis' : ev.precio + '€'}</span></p>
+            <p style="margin-bottom:4px;">💵 <b>Precio Entrada:</b> <span style="color:#10b981; font-weight:bold;">${ev.precio === 0 ? 'Gratis' : ev.precio + '€'}</span></p>
+            ${ev.fuente && ev.fuente.url ? `<p style="margin-bottom:0;">🔗 <b>Fuente:</b> <a href="${ev.fuente.url}" target="_blank" style="color:#3b82f6; text-decoration:underline;">${ev.fuente.nombre || 'Ver origen'}</a></p>` : ''}
         </div>
         <div class="tinder-controles" style="margin-top:20px;">
             <button class="btn-interaccion btn-no" ${estaDeshabilitado ? 'disabled' : ''} onclick="ejecutarInteraccionDetalle('${ev._id}', 'NO_INTERESA')">👎 No me interesa</button>

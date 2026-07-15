@@ -20,7 +20,7 @@ const eventoNuevo = {
     precio: 0,
     organizador: 'Ajuntament de Torredembarra',
     esPremium: false,
-    multimediaUrl: 'https://femturisme.cat/pobles/torredembarra',
+    multimediaUrl: 'https://images.unsplash.com/photo-1533622596524-a94e432af101?w=800',
     multimediaTipo: 'image',
     galeria: [],
     ubicacion: {
@@ -53,7 +53,11 @@ async function insertarEvento() {
         await mongoose.connect(MONGODB_URI);
         console.log('✅ Conectado a MongoDB');
 
-        console.log('📝 Insertando evento...');
+        // Borrar evento anterior (sin imagen o con imagen mala)
+        console.log('🧹 Limpiando versión anterior...');
+        await Evento.deleteMany({ titulo: 'Festa del Quadre de Santa Rosalia a Torredembarra' });
+
+        console.log('📝 Insertando evento actualizado...');
         const resultado = await Evento.create(eventoNuevo);
         
         console.log('✅ Evento insertado correctamente');
@@ -62,6 +66,7 @@ async function insertarEvento() {
         console.log(`Fechas: ${resultado.fechaInicio.toLocaleDateString('es-ES')} - ${resultado.fechaFin.toLocaleDateString('es-ES')}`);
         console.log(`Ubicación: ${resultado.ubicacion.direccion}`);
         console.log(`Fuente: ${resultado.fuente.url}`);
+        console.log(`📸 Imagen: ${resultado.multimediaUrl}`);
         
         await mongoose.disconnect();
         console.log('✅ Desconectado de MongoDB');

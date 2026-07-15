@@ -624,15 +624,27 @@ function inicializarAccesosRapidosFranja() {
 }
 
 function inicializarMapaGlobal() {
-    mapGlobal = L.map('mapaCalorGlobal').setView([41.14, 1.40], 12);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(mapGlobal);
+    try {
+        console.log('[INIT MAPA] Verificando Leaflet:', typeof L);
+        console.log('[INIT MAPA] Elemento mapaCalorGlobal:', document.getElementById('mapaCalorGlobal'));
+        
+        mapGlobal = L.map('mapaCalorGlobal').setView([41.14, 1.40], 12);
+        console.log('[INIT MAPA] Mapa inicializado correctamente');
+        
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(mapGlobal);
+        console.log('[INIT MAPA] Capa de tiles agregada');
+    } catch (error) {
+        console.error('[INIT MAPA] ERROR al inicializar:', error);
+    }
 }
 
 async function cargarPortal() {
+    console.log('[CARGAR PORTAL] Iniciando carga de eventos...');
     const res = await fetch(`${API_BASE}/api/eventos`, {
         headers: obtenerHeadersAutenticacion()
     });
     todosLosEventos = await res.json();
+    console.log(`[CARGAR PORTAL] Eventos cargados: ${todosLosEventos.length}`);
     grupoEventosActual = 'todos';
     eventosPremiumTinder = todosLosEventos.filter(ev => ev.esPremium === true);
     renderizarListaYMapa();
@@ -641,8 +653,15 @@ async function cargarPortal() {
 }
 
 function renderizarListaYMapa() {
+    console.log('[RENDER MAPA] Iniciando renderización...');
+    console.log('[RENDER MAPA] mapGlobal existe:', !!mapGlobal);
+    console.log('[RENDER MAPA] todosLosEventos:', todosLosEventos?.length || 0);
+    
     const contenedor = document.getElementById('eventosContenedor');
-    if (!contenedor) return;
+    if (!contenedor) {
+        console.warn('[RENDER MAPA] No encontrado contenedor eventosContenedor');
+        return;
+    }
     let tabs = document.getElementById('tabsEventosGrupos');
     if (!tabs && contenedor.parentElement) {
         tabs = document.createElement('div');
@@ -691,10 +710,13 @@ function renderizarListaYMapa() {
         contenedor.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No hay eventos en este grupo por ahora.</p>';
     }
     const eventosMapa = todosLosEventos;
-    eventosMapa.forEach(ev => {
+    console.log('[RENDER MAPA] Creando marcadores para', eventosMapa.length, 'eventos');
+    eventosMapa.forEach((ev, idx) => {
+        console.log(`[RENDER MAPA] [${idx}] ${ev.titulo}: lat=${ev.ubicacion?.coordenadas?.latitud}, lon=${ev.ubicacion?.coordenadas?.longitud}`);
         if (ev.ubicacion?.coordenadas?.latitud) {
             const lat = ev.ubicacion.coordenadas.latitud;
             const lon = ev.ubicacion.coordenadas.longitud;
+            console.log(`[RENDER MAPA] ✅ Creando marcador en [${lat}, ${lon}]`);
             const temperatura = Math.min(30 + (ev.afluenciaEnVivo || 0), 100);
             L.circleMarker([lat, lon], {
                 radius: temperatura / 2,

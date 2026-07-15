@@ -3,9 +3,6 @@ let mapGlobal, mapModal, markerModal;
 let todosLosEventos = [];
 let eventosPremiumTinder = [];
 let tinderIndex = 0;
-let mediaRecorder;
-let audioChunks = [];
-let maxAudioTimeout = null;
 let usuarioConectado = null;
 let archivosMultimediaABorrar = [];
 let temporizadorCarrusel = null;
@@ -724,37 +721,16 @@ function renderizarListaYMapa() {
         } else {
             imgPortadaHTML = `<img src="https://images.unsplash.com/photo-1506157786151-b8491531f063?w=600" class="imagen-portada-card" alt="Portada por defecto">`;
         }
-        let audiosHTML = '';
-        if (ev.audiosEnVivo && ev.audiosEnVivo.length > 0) {
-            ev.audiosEnVivo.forEach(aud => {
-                audiosHTML += `
-                    <div class="audio-item">
-                        📢 <span>${aud.usuario}:</span>
-                        <audio src="${aud.audioUrl}" controls style="height:24px; max-width:180px;"></audio>
-                    </div>`;
-            });
-        } else {
-            audiosHTML = '<p style="color:var(--text-muted); font-size:0.75rem;">Sin audios del ambiente aún.</p>';
-        }
         const grupoEvento = obtenerGrupoEvento(ev);
         const esOrganizador = usuarioConectado && usuarioConectado.nombre.trim().toLowerCase() === ev.organizador.trim().toLowerCase();
         const esSuperAdminLocal = esSuperAdmin();
-        const botonGrabarHTML = (esOrganizador || esSuperAdminLocal)
-            ? `<button class="btn-record" id="recBtn-${ev._id}" onclick="alternarGrabacion('${ev._id}')">🎤 Grabar Ambiente ${esSuperAdminLocal ? '(SúperAdmin)' : ''}</button>`
-            : `<span style="font-size:0.75rem; color:var(--premium-gold); cursor:pointer; font-weight:500;" onclick="abrirModalAuth()">¿Quieres escuchar el ambiente del evento? ¡Regístrate!</span>`;
         div.innerHTML = `
             <div class="grupo-evento-chip">${escaparHtml(grupoEvento)}</div>
             ${imgPortadaHTML}
             <div class="contenido-card">
                 <h3>${ev.titulo}</h3>
                 <p style="font-size:0.85rem; color:var(--text-muted); margin:5px 0;">${urlify(ev.descripcion)}</p>
-                <div class="audio-live-box">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <span style="font-size:0.8rem; font-weight:bold; color:#10b981;">🎧 Ambiente en Vivo</span>
-                        ${botonGrabarHTML}
-                    </div>
-                    <div class="lista-audios">${audiosHTML}</div>
-                </div>
+
                 <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85rem; background:#0f172a; padding:8px; border-radius:8px;">
                     <span>📍 ${ev.ubicacion?.direccion?.substring(0,35) || 'Ubicación'}...</span>
                     <span style="color:#10b981; font-weight:bold;">${ev.precio===0?'Gratis':ev.precio+'€'}</span>

@@ -1,12 +1,8 @@
+#!/usr/bin/env node
 require('dotenv').config();
 const mongoose = require('mongoose');
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-    console.error('❌ Error: MONGODB_URI no está configurado en .env');
-    process.exit(1);
-}
+const MONGODB_URI = 'mongodb+srv://jmv1985jmvPlandem:DVfZxgc8NYuk7f2l@cluster0.7fui2kq.mongodb.net/plandem?retryWrites=true&w=majority&appName=Cluster0';
 
 const eventoSchema = new mongoose.Schema({}, { strict: false });
 const Evento = mongoose.model('Evento', eventoSchema);
@@ -50,14 +46,13 @@ const eventoNuevo = {
 async function insertarEvento() {
     try {
         console.log('🔗 Conectando a MongoDB...');
-        await mongoose.connect(MONGODB_URI);
+        await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
         console.log('✅ Conectado a MongoDB');
 
-        // Borrar evento anterior (sin imagen o con imagen mala)
         console.log('🧹 Limpiando versión anterior...');
         await Evento.deleteMany({ titulo: 'Festa del Quadre de Santa Rosalia a Torredembarra' });
 
-        console.log('📝 Insertando evento actualizado...');
+        console.log('📝 Insertando evento...');
         const resultado = await Evento.create(eventoNuevo);
         
         console.log('✅ Evento insertado correctamente');
@@ -66,7 +61,7 @@ async function insertarEvento() {
         console.log(`Fechas: ${resultado.fechaInicio.toLocaleDateString('es-ES')} - ${resultado.fechaFin.toLocaleDateString('es-ES')}`);
         console.log(`Ubicación: ${resultado.ubicacion.direccion}`);
         console.log(`Fuente: ${resultado.fuente.url}`);
-        console.log(`📸 Imagen: ${resultado.multimediaUrl}`);
+        console.log(`📸 Imagen: https://femturisme.cat/_fotos/agenda/main/festa-del-quadre-de-santa-rosalia-a-torredembarra.jpg`);
         
         await mongoose.disconnect();
         console.log('✅ Desconectado de MongoDB');

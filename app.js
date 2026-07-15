@@ -691,14 +691,10 @@ function renderizarListaYMapa() {
         contenedor.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No hay eventos en este grupo por ahora.</p>';
     }
     const eventosMapa = todosLosEventos;
-    console.log(`[MAPA] Intentando renderizar ${eventosMapa.length} eventos`);
     eventosMapa.forEach(ev => {
-        console.log(`[MAPA] Evento: ${ev.titulo}`);
-        console.log(`[MAPA]   ubicacion:`, ev.ubicacion);
         if (ev.ubicacion?.coordenadas?.latitud) {
             const lat = ev.ubicacion.coordenadas.latitud;
             const lon = ev.ubicacion.coordenadas.longitud;
-            console.log(`[MAPA]   ✅ Dibujando marcador en [${lat}, ${lon}]`);
             const temperatura = Math.min(30 + (ev.afluenciaEnVivo || 0), 100);
             L.circleMarker([lat, lon], {
                 radius: temperatura / 2,
@@ -708,8 +704,6 @@ function renderizarListaYMapa() {
                 opacity: 0.8,
                 fillOpacity: 0.35
             }).addTo(mapGlobal).bindPopup(`<b>${escaparHtml(ev.titulo)}</b><br>${escaparHtml(obtenerGrupoEvento(ev))}<br>🔥 Actividad Live: ${ev.afluenciaEnVivo || 0} pts`);
-        } else {
-            console.log(`[MAPA]   ❌ Sin coordenadas válidas`);
         }
     });
     eventosVisibles.forEach(ev => {

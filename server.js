@@ -162,7 +162,8 @@ app.use(helmet({
                 'https://api.cloudinary.com',
                 'https://nominatim.openstreetmap.org',
                 'https://*.tile.openstreetmap.org',
-                'https://*.basemaps.cartocdn.com'
+                'https://*.basemaps.cartocdn.com',
+                'https://unpkg.com'
             ],
             fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com', 'https:'],
             mediaSrc: ["'self'", 'data:', 'blob:'],

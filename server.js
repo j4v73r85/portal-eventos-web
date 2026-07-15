@@ -2137,6 +2137,19 @@ app.post('/api/admin/usuarios-promotor', requerirAdmin, async (req, res) => {
     }
 });
 
+app.delete('/api/admin/limpiar-eventos', requerirAdmin, async (req, res) => {
+    try {
+        const resultado = await Evento.deleteMany({});
+        res.json({
+            success: true,
+            mensaje: `Se han eliminado ${resultado.deletedCount} eventos de la base de datos.`,
+            eventosEliminados: resultado.deletedCount
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/usuarios/login', authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;

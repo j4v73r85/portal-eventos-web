@@ -154,7 +154,8 @@ app.use(helmet({
                 'https://res.cloudinary.com',
                 'https://*.tile.openstreetmap.org',
                 'https://*.basemaps.cartocdn.com',
-                'https://unpkg.com'
+                'https://unpkg.com',
+                'https://femturisme.cat'
             ],
             connectSrc: [
                 "'self'",

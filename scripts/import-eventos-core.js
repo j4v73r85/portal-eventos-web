@@ -718,6 +718,26 @@ function esUrlAgendaRelacionada(href = '') {
     return /agenda|event|eventos|activitat|activitats|calendari|calendario|programa|que-fer|quefer|whatson|culture|cultura|festival|fiesta|festa/.test(valor);
 }
 
+function esEventoIndividual(url = '') {
+    const valor = String(url || '').toLowerCase();
+    const esAgendaGeneral = /(agenda|events|programa|whatson|activitats)\/?$/.test(valor);
+    const tieneIdOToken = /(\d{4,}|[a-f0-9]{8,}|[\w-]{12,})/.test(valor);
+    return !esAgendaGeneral && tieneIdOToken;
+}
+
+function esTituloBueno(titulo = '') {
+    const texto = String(titulo || '').trim();
+    if (!texto || texto.length < 5) return false;
+    
+    const basura = /^(benvinguda|compartir|enlace|link|english|castellano|français|salta|iniciar|logout|siguiente|página|calendar|home|menu|nav|\+|«|»|\d+$)/i;
+    if (basura.test(texto)) return false;
+    
+    const soloNumeros = /^\d+$/.test(texto);
+    const soloNavegacion = /^(activitats|cultura|agenda|eventos|events|whatson)$/i.test(texto);
+    
+    return !soloNumeros && !soloNavegacion;
+}
+
 function extraerCandidatosEnlacesAgenda($, baseUrl) {
     const candidatos = [];
     const vistos = new Set();
@@ -735,12 +755,12 @@ function extraerCandidatosEnlacesAgenda($, baseUrl) {
 
         if (vistos.has(href)) return;
         const texto = normalizarTexto($(elemento).text(), 200);
-        const contexto = normalizarTexto($(elemento).parent().text(), 260);
-        const combinado = `${href} ${texto} ${contexto}`.toLowerCase();
-
-        if (!esUrlAgendaRelacionada(combinado)) return;
+        
+        if (!esEventoIndividual(href)) return;
+        if (!esTituloBueno(texto)) return;
+        
         vistos.add(href);
-        candidatos.push({ href, texto, contexto });
+        candidatos.push({ href, texto, contexto: '' });
     });
 
     return candidatos;
@@ -781,54 +801,70 @@ async function descubrirEventosDesdeHtml(fuente, nivel = 0) {
     });
 
     const $ = cheerio.load(respuesta.data);
-    const candidatosEnlaces = extraerCandidatosEnlacesAgenda($, fuente.url).slice(0, fuente.maxDescubiertos);
-    const candidatosSitemap = await obtenerUrlsDesdeSitemap(fuente.url, fuente.maxDescubiertos).catch(() => []);
-    const candidatos = [];
-    const vistos = new Set();
-
-    const agregarCandidato = (candidato) => {
-        const url = String(candidato?.href || candidato?.url || '').trim();
-        if (!url || vistos.has(url)) return;
-        vistos.add(url);
-        candidatos.push(candidato);
-    };
-
-    candidatosSitemap.forEach((url) => agregarCandidato({ href: url, texto: '', contexto: '' }));
-    candidatosEnlaces.forEach((candidato) => agregarCandidato(candidato));
-
-    if (candidatos.length === 0 && fuente.selectorItem) {
+    
+    // Si hay selector de item, usarlo directamente
+    if (fuente.selectorItem) {
         const elementos = $(fuente.selectorItem).toArray().slice(0, fuente.maxItems);
-        return elementos.map((elemento) => construirEventoDesdeHtml($, elemento, fuente)).filter((evento) => evento.titulo);
+        const eventos = elementos
+            .map((elemento) => construirEventoDesdeHtml($, elemento, fuente))
+            .filter((evento) => evento.titulo && esTituloBueno(evento.titulo));
+        
+        if (eventos.length > 0) return eventos;
     }
-
+    
+    // Buscar enlaces de eventos individuales
+    let candidatosEnlaces = extraerCandidatosEnlacesAgenda($, fuente.url)
+        .filter((c) => esTituloBueno(c.texto))
+        .slice(0, Math.min(fuente.maxDescubiertos, 20));
+    
+    // Si muy pocos candidatos, intentar sitemap
+    if (candidatosEnlaces.length < 5) {
+        const urlsSitemap = await obtenerUrlsDesdeSitemap(fuente.url, fuente.maxDescubiertos).catch(() => []);
+        const sitemapFiltrados = urlsSitemap
+            .filter((url) => esEventoIndividual(url))
+            .slice(0, 10);
+        
+        candidatosEnlaces = candidatosEnlaces.concat(
+            sitemapFiltrados.map((url) => ({ href: url, texto: '' }))
+        ).slice(0, 20);
+    }
+    
+    if (candidatosEnlaces.length === 0) {
+        return [];
+    }
+    
+    // Procesar candidatos (máximo 15 para no saturar)
     const eventos = [];
-    for (const candidato of candidatos) {
+    for (const candidato of candidatosEnlaces.slice(0, 15)) {
         try {
-            const preview = fuente.enriquecerPagina ? await obtenerPreviewDesdePagina(candidato.href) : {};
+            const preview = await obtenerPreviewDesdePagina(candidato.href);
+            
             const titulo = normalizarTexto(
-                primeraCadena(
-                    preview.titulo,
-                    candidato.texto,
-                    extraerTituloDeHtml(respuesta.data),
-                    fuente.nombre
-                ),
+                primeraCadena(preview.titulo, candidato.texto),
                 220
             );
+            
+            if (!esTituloBueno(titulo)) continue;
+            
             const descripcion = normalizarTexto(
-                primeraCadena(preview.descripcion, candidato.contexto, `Evento importado desde ${fuente.nombre}`),
+                preview.descripcion || `Evento importado desde ${fuente.nombre}`,
                 900
             );
+            
+            if (!preview.imagen || preview.imagen.includes('default') || preview.imagen.includes('logo')) {
+                continue;
+            }
 
             eventos.push({
                 titulo,
                 descripcion,
-                fechaInicio: extraerFechaDelElemento($, $("a[href='" + candidato.href + "']").first().parent(), fuente) || new Date().toISOString(),
-                fechaFin: extraerFechaDelElemento($, $("a[href='" + candidato.href + "']").first().parent(), fuente) || new Date().toISOString(),
+                fechaInicio: new Date().toISOString(),
+                fechaFin: new Date().toISOString(),
                 categoria: normalizarCategoriaImportada(fuente.categoria),
                 precio: fuente.precio,
                 organizador: fuente.organizador,
                 esPremium: false,
-                multimediaUrl: preview.imagen || extraerImagenDeHtml(respuesta.data, fuente.url),
+                multimediaUrl: preview.imagen || '',
                 multimediaTipo: 'image',
                 galeria: preview.imagen ? [preview.imagen] : [],
                 ubicacion: fuente.ubicacion || {
@@ -843,12 +879,12 @@ async function descubrirEventosDesdeHtml(fuente, nivel = 0) {
                     identificador: ''
                 }
             });
-        } catch {
+        } catch (error) {
             continue;
         }
     }
 
-    return eventos.filter((evento) => evento.titulo);
+    return eventos.filter((evento) => evento.titulo && evento.multimediaUrl);
 }
 
 async function obtenerPreviewDesdePagina(url) {
@@ -861,11 +897,28 @@ async function obtenerPreviewDesdePagina(url) {
             }
         });
 
-        return {
-            imagen: extraerImagenDeHtml(respuesta.data, url),
-            descripcion: extraerDescripcionDeHtml(respuesta.data)
-        };
-    } catch {
+        const $ = cheerio.load(respuesta.data);
+        
+        // Priorizar contenido principal
+        const contenidoPrincipal = $('main, article, .content, [role="main"], .evento, .event, .activity, .activitat').first();
+        const imagen = contenidoPrincipal.length > 0
+            ? extraerImagenDeHtml(contenidoPrincipal.html() || '', url)
+            : extraerImagenDeHtml(respuesta.data, url);
+        
+        const descripcion = contenidoPrincipal.length > 0
+            ? normalizarTexto(
+                primeraCadena(
+                    contenidoPrincipal.find('p').first().text(),
+                    contenidoPrincipal.text()
+                ),
+                900
+            )
+            : extraerDescripcionDeHtml(respuesta.data);
+        
+        const titulo = extraerTituloDeHtml(respuesta.data);
+
+        return { imagen, descripcion, titulo };
+    } catch (error) {
         return {};
     }
 }

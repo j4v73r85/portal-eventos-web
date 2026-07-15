@@ -690,7 +690,7 @@ function renderizarListaYMapa() {
     if (eventosVisibles.length === 0) {
         contenedor.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No hay eventos en este grupo por ahora.</p>';
     }
-    const eventosMapa = grupoEventosActual === 'todos' ? todosLosEventos : eventosVisibles;
+    const eventosMapa = todosLosEventos;
     eventosMapa.forEach(ev => {
         if (ev.ubicacion?.coordenadas?.latitud) {
             const lat = ev.ubicacion.coordenadas.latitud;
@@ -698,8 +698,8 @@ function renderizarListaYMapa() {
             const temperatura = Math.min(30 + (ev.afluenciaEnVivo || 0), 100);
             L.circleMarker([lat, lon], {
                 radius: temperatura / 2,
-                fillColor: ev.esPremium ? '#f59e0b' : '#3b82f6',
-                color: ev.esPremium ? '#f59e0b' : '#3b82f6',
+                fillColor: ev.esPremium ? '#f59e0b' : '#a855f7',
+                color: ev.esPremium ? '#f59e0b' : '#a855f7',
                 weight: 1,
                 opacity: 0.8,
                 fillOpacity: 0.35

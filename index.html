@@ -481,6 +481,11 @@
                 </select>
                 <button type="submit" style="width:100%; background:#4f46e5; color:white; border:none; border-radius:10px; padding:10px; font-weight:700; cursor:pointer;">Crear perfil promotor</button>
             </form>
+            <div style="background:#7f1d1d; border:1px solid #dc2626; border-radius:12px; padding:12px; margin-bottom:16px;">
+                <p style="margin:0 0 10px; color:#fecaca; font-weight:700;">⚠️ Zona de peligro</p>
+                <p style="margin:0 0 10px; color:#fca5a5; font-size:14px;">Limpiar TODOS los eventos de la base de datos. Esta acción no se puede deshacer.</p>
+                <button type="button" onclick="limpiarTodosEventos()" style="width:100%; background:#dc2626; color:white; border:none; border-radius:10px; padding:10px; font-weight:700; cursor:pointer;">🗑️ Eliminar TODOS los eventos</button>
+            </div>
             <div id="solicitudesPromotorContainer"></div>
         </div>
     </div>

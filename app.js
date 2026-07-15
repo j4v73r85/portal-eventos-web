@@ -2978,3 +2978,28 @@ window.onload = function() {
     cargarSesionUsuario();
     cargarPortal();
 };
+
+async function limpiarTodosEventos() {
+    if (!confirm('⚠️ ¡CUIDADO! Esto eliminará TODOS los eventos de la base de datos. ¿Estás seguro? Esta acción NO se puede deshacer.')) {
+        return;
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/limpiar-eventos`, {
+            method: 'DELETE',
+            headers: obtenerHeadersAutenticacion()
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert(`✅ ${data.mensaje}\n\nEventos eliminados: ${data.eventosEliminados}`);
+            cargarPortal();
+        } else {
+            alert(`❌ Error: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`❌ Error de red: ${error.message}`);
+        console.error(error);
+    }
+}

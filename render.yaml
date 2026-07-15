@@ -52,23 +52,5 @@ services:
         value: plandem/perfiles
       - key: CLOUDINARY_PROFILE_STORAGE_REQUIRED
         value: "false"
-      - key: CLOUDINARY_STORAGE_REQUIRED
-        value: "true"
-      - key: MIGRAR_UPLOADS_LEGACY_ON_START
-        value: "true"
-      - key: NODE_ENV
-        value: production
-  - type: cron
-    name: plandem-importador-eventos
-    env: node
-    plan: starter
-    schedule: "0 4 * * *"
-    buildCommand: npm install
-    command: npm run import:eventos
-    envVars:
-      - key: MONGODB_URI
-        sync: false
-      - key: EVENT_IMPORT_SOURCES_JSON
-        sync: false
       - key: NODE_ENV
         value: production

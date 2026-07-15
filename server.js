@@ -39,8 +39,6 @@ const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || '';
 const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || 'plandem/perfiles';
 const CLOUDINARY_PROFILE_STORAGE_REQUIRED = process.env.CLOUDINARY_PROFILE_STORAGE_REQUIRED === 'true';
 const CLOUDINARY_STORAGE_REQUIRED = process.env.CLOUDINARY_STORAGE_REQUIRED === 'true';
-const MIGRAR_UPLOADS_LEGACY_ON_START = process.env.MIGRAR_UPLOADS_LEGACY_ON_START !== 'false';
-const IMPORTAR_EVENTOS_EN_STARTUP = process.env.IMPORTAR_EVENTOS_EN_STARTUP !== 'false';
 const CLOUDINARY_CONFIGURADO = Boolean(
     CLOUDINARY_URL || (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET)
 );
@@ -1252,23 +1250,6 @@ function puedeGestionarEventos(usuario) {
     return (usuario.esAdmin === true && esSuperadminEmail(usuario.email)) || usuario.esModerador === true;
 }
 
-function lanzarImportacionEventosEnSegundoPlano(origen = 'startup') {
-    if (process.env.NODE_ENV !== 'production' || !IMPORTAR_EVENTOS_EN_STARTUP) return;
-    const scriptPath = path.join(__dirname, 'scripts', 'import-eventos-diario.js');
-    const child = spawn(process.execPath, [scriptPath], {
-        cwd: __dirname,
-        env: process.env,
-        stdio: 'inherit',
-        shell: false
-    });
-    child.on('exit', (code) => {
-        console.log(`📥 Importación de eventos (${origen}) finalizada con código ${code}`);
-    });
-    child.on('error', (error) => {
-        console.error(`⚠️ Error lanzando importación de eventos (${origen}):`, error.message);
-    });
-}
-
 // Conexión a MongoDB y sincronización de índices
 mongoose.connect(MONGODB_URI)
   .then(async () => {
@@ -1318,22 +1299,6 @@ mongoose.connect(MONGODB_URI)
               { $set: { emailVerificado: true } }
           );
       } catch (e) { console.error('Error al inicializar datos:', e); }
-
-      if (MIGRAR_UPLOADS_LEGACY_ON_START) {
-          setTimeout(() => {
-              migrarMultimediaLegacyUploads()
-                  .then((resumen) => {
-                      console.log('✅ Migración legacy /uploads completada:', resumen);
-                  })
-                  .catch((error) => {
-                      console.error('⚠️ Error en migración legacy /uploads:', error.message);
-                  });
-          }, 1500);
-      }
-
-      setTimeout(() => {
-          lanzarImportacionEventosEnSegundoPlano('startup');
-      }, 5000);
   })
   .catch(err => console.error('❌ Error de conexión:', err));
 
@@ -1345,30 +1310,6 @@ app.get('/', (req, res) => { res.sendFile(__dirname + '/index.html'); });
 
 app.get('/api/health', (req, res) => {
     res.json({ ok: true, service: 'portal-eventos', timestamp: new Date().toISOString() });
-});
-
-app.post('/api/admin/importar-eventos', requerirAdmin, async (req, res) => {
-    try {
-        const { spawn } = require('child_process');
-        const scriptPath = path.join(__dirname, 'scripts', 'import-eventos-diario.js');
-        const child = spawn(process.execPath, [scriptPath], {
-            cwd: __dirname,
-            env: process.env,
-            stdio: 'pipe',
-            shell: false
-        });
-
-        let salida = '';
-        let errores = '';
-        child.stdout.on('data', (chunk) => { salida += chunk.toString(); });
-        child.stderr.on('data', (chunk) => { errores += chunk.toString(); });
-
-        child.on('close', (code) => {
-            res.json({ success: code === 0, code, salida, errores });
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
 });
 
 async function servirMediaPublica(req, res) {

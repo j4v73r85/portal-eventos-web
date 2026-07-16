@@ -156,7 +156,9 @@ app.use(helmet({
                 'https://*.basemaps.cartocdn.com',
                 'https://unpkg.com',
                 'https://femturisme.cat',
-                'https://surtdecasa.cat'
+                'https://surtdecasa.cat',
+                'https://agenda.tarragona.cat',
+                'https://www.tarragona.cat'
             ],
             connectSrc: [
                 "'self'",

@@ -770,19 +770,33 @@ function renderizarListaYMapa() {
             imgPortadaHTML = `<img src="https://images.unsplash.com/photo-1506157786151-b8491531f063?w=600" class="imagen-portada-card" alt="Portada por defecto">`;
         }
         const grupoEvento = obtenerGrupoEvento(ev);
+        const fechaEtiqueta = ev.fechaInicio
+            ? new Date(ev.fechaInicio).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+            : 'Fecha pendiente';
+        const direccionCorta = ev.ubicacion?.direccion?.substring(0, 56) || 'Ubicacion por confirmar';
+        const precioEtiqueta = ev.precio === 0 ? 'Gratis' : `${ev.precio}€`;
+        const idEventoSerializado = JSON.stringify(ev._id);
         const esOrganizador = usuarioConectado && usuarioConectado.nombre.trim().toLowerCase() === ev.organizador.trim().toLowerCase();
         const esSuperAdminLocal = esSuperAdmin();
         div.innerHTML = `
-            <div class="grupo-evento-chip">${escaparHtml(grupoEvento)}</div>
-            ${imgPortadaHTML}
-            <div class="contenido-card">
-                <h3>${ev.titulo}</h3>
-                <p style="font-size:0.85rem; color:var(--text-muted); margin:5px 0;">${urlify(ev.descripcion)}</p>
-
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85rem; background:#0f172a; padding:8px; border-radius:8px;">
-                    <span>📍 ${ev.ubicacion?.direccion?.substring(0,35) || 'Ubicación'}...</span>
-                    <span style="color:#10b981; font-weight:bold;">${ev.precio===0?'Gratis':ev.precio+'€'}</span>
+            <div class="evento-card-media">
+                ${imgPortadaHTML}
+                <div class="evento-card-vignette"></div>
+                <div class="evento-card-badges">
+                    <div class="grupo-evento-chip">${escaparHtml(grupoEvento)}</div>
+                    <div class="evento-card-fecha">${escaparHtml(fechaEtiqueta)}</div>
                 </div>
+            </div>
+            <div class="contenido-card">
+                <h3 class="evento-card-titulo">${ev.titulo}</h3>
+                <p class="evento-card-descripcion">${urlify(ev.descripcion)}</p>
+
+                <div class="evento-card-meta">
+                    <span>📍 ${escaparHtml(direccionCorta)}</span>
+                    <span class="evento-card-precio">${escaparHtml(precioEtiqueta)}</span>
+                </div>
+
+                <button type="button" class="btn-secondary evento-card-cta" onclick='abrirModalDetalle(${idEventoSerializado})'>Ver detalles</button>
             </div>
         `;
         contenedor.appendChild(div);

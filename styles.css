@@ -682,37 +682,137 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 
 .layout-inferior { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; max-width: 1300px; margin: 0 auto; }
 
-.card {
+#eventosContenedor .card {
     background: linear-gradient(180deg, rgba(16, 18, 32, 0.97), rgba(9, 10, 18, 0.96));
     margin-bottom: 20px;
-    border-radius: 16px;
+    border-radius: 22px;
     border: 1px solid rgba(255, 46, 166, 0.28);
     position: relative;
     cursor: pointer;
     transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
     overflow: hidden;
-    box-shadow: 0 14px 30px rgba(5, 7, 18, 0.62);
+    box-shadow: 0 18px 34px rgba(5, 7, 18, 0.66);
 }
-.card:hover {
+#eventosContenedor .card:hover {
     transform: translateY(-2px);
     border-color: rgba(34, 232, 255, 0.45);
-    box-shadow: 0 16px 36px rgba(34, 232, 255, 0.15);
+    box-shadow: 0 24px 44px rgba(34, 232, 255, 0.2);
 }
 
 .imagen-portada-card {
     width: 100%;
     height: 210px;
     object-fit: cover;
-    object-position: center 38%;
-    border-bottom: 1px solid #334155;
+    object-position: center 35%;
     display: block;
-    transition: transform 0.28s ease, filter 0.28s ease;
+    transition: transform 0.38s ease, filter 0.38s ease;
 }
-.card:hover .imagen-portada-card {
+#eventosContenedor .card:hover .imagen-portada-card {
     transform: scale(1.04);
-    filter: saturate(1.08) contrast(1.04);
+    filter: saturate(1.1) contrast(1.05);
 }
-.contenido-card { padding: 20px; }
+.evento-card-media {
+    position: relative;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.evento-card-vignette {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(8, 11, 24, 0.05) 10%, rgba(8, 11, 24, 0.4) 100%);
+    pointer-events: none;
+}
+
+.evento-card-badges {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.evento-card-fecha {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(250, 204, 21, 0.42);
+    background: rgba(13, 17, 30, 0.86);
+    color: #fde68a;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.contenido-card {
+    padding: 16px 18px 18px;
+}
+
+.evento-card-titulo {
+    margin: 0;
+    color: #f8fafc;
+    line-height: 1.2;
+    font-size: 1.08rem;
+}
+
+.evento-card-descripcion {
+    margin: 9px 0 12px;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.evento-card-meta {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+    font-size: 0.82rem;
+    background: linear-gradient(130deg, rgba(15, 23, 42, 0.92), rgba(30, 27, 75, 0.7));
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 9px 10px;
+    border-radius: 12px;
+}
+
+.evento-card-meta span:first-child {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.evento-card-precio {
+    color: #34d399;
+    font-weight: 800;
+}
+
+.evento-card-cta {
+    margin-top: 10px;
+    width: 100%;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+@media (max-width: 700px) {
+    #eventosContenedor .card {
+        border-radius: 16px;
+    }
+
+    .imagen-portada-card {
+        height: 185px;
+    }
+
+    .evento-card-meta {
+        grid-template-columns: 1fr;
+    }
+}
 
 .audio-live-box { background: #0f172a; padding: 12px; border-radius: 10px; margin: 10px 0; border: 1px solid #1e1b4b; }
 .audio-item { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 0.85rem; }

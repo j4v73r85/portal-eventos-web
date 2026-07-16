@@ -624,27 +624,20 @@ function inicializarAccesosRapidosFranja() {
 }
 
 function inicializarMapaGlobal() {
-    try {
-        console.log('[INIT MAPA] Verificando Leaflet:', typeof L);
-        console.log('[INIT MAPA] Elemento mapaCalorGlobal:', document.getElementById('mapaCalorGlobal'));
-        
-        mapGlobal = L.map('mapaCalorGlobal').setView([41.14, 1.40], 12);
-        console.log('[INIT MAPA] Mapa inicializado correctamente');
-        
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(mapGlobal);
-        console.log('[INIT MAPA] Capa de tiles agregada');
-    } catch (error) {
-        console.error('[INIT MAPA] ERROR al inicializar:', error);
-    }
+    mapGlobal = L.map('mapaCalorGlobal').setView([41.14, 1.40], 12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(mapGlobal);
+
+    // Leaflet puede iniciar con tamaño incorrecto si el layout aún no está asentado.
+    setTimeout(() => {
+        if (mapGlobal) mapGlobal.invalidateSize(true);
+    }, 120);
 }
 
 async function cargarPortal() {
-    console.log('[CARGAR PORTAL] Iniciando carga de eventos...');
     const res = await fetch(`${API_BASE}/api/eventos`, {
         headers: obtenerHeadersAutenticacion()
     });
     todosLosEventos = await res.json();
-    console.log(`[CARGAR PORTAL] Eventos cargados: ${todosLosEventos.length}`);
     grupoEventosActual = 'todos';
     eventosPremiumTinder = todosLosEventos.filter(ev => ev.esPremium === true);
     renderizarListaYMapa();
@@ -653,15 +646,8 @@ async function cargarPortal() {
 }
 
 function renderizarListaYMapa() {
-    console.log('[RENDER MAPA] Iniciando renderización...');
-    console.log('[RENDER MAPA] mapGlobal existe:', !!mapGlobal);
-    console.log('[RENDER MAPA] todosLosEventos:', todosLosEventos?.length || 0);
-    
     const contenedor = document.getElementById('eventosContenedor');
-    if (!contenedor) {
-        console.warn('[RENDER MAPA] No encontrado contenedor eventosContenedor');
-        return;
-    }
+    if (!contenedor || !mapGlobal) return;
     let tabs = document.getElementById('tabsEventosGrupos');
     if (!tabs && contenedor.parentElement) {
         tabs = document.createElement('div');
@@ -703,6 +689,7 @@ function renderizarListaYMapa() {
     `;
 
     contenedor.innerHTML = '';
+    mapGlobal.invalidateSize(true);
     mapGlobal.eachLayer((layer) => {
         if (layer instanceof L.CircleMarker) mapGlobal.removeLayer(layer);
     });
@@ -710,15 +697,13 @@ function renderizarListaYMapa() {
         contenedor.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No hay eventos en este grupo por ahora.</p>';
     }
     const eventosMapa = todosLosEventos;
-    console.log('[RENDER MAPA] Creando marcadores para', eventosMapa.length, 'eventos');
-    eventosMapa.forEach((ev, idx) => {
-        console.log(`[RENDER MAPA] [${idx}] ${ev.titulo}: lat=${ev.ubicacion?.coordenadas?.latitud}, lon=${ev.ubicacion?.coordenadas?.longitud}`);
-        if (ev.ubicacion?.coordenadas?.latitud) {
-            const lat = ev.ubicacion.coordenadas.latitud;
-            const lon = ev.ubicacion.coordenadas.longitud;
-            console.log(`[RENDER MAPA] ✅ Creando marcador en [${lat}, ${lon}]`);
+    const marcadores = [];
+    eventosMapa.forEach((ev) => {
+        const lat = Number(ev?.ubicacion?.coordenadas?.latitud);
+        const lon = Number(ev?.ubicacion?.coordenadas?.longitud);
+        if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
             const temperatura = Math.min(30 + (ev.afluenciaEnVivo || 0), 100);
-            L.circleMarker([lat, lon], {
+            const marcador = L.circleMarker([lat, lon], {
                 radius: temperatura / 2,
                 fillColor: ev.esPremium ? '#f59e0b' : '#a855f7',
                 color: ev.esPremium ? '#f59e0b' : '#a855f7',
@@ -726,8 +711,22 @@ function renderizarListaYMapa() {
                 opacity: 0.8,
                 fillOpacity: 0.35
             }).addTo(mapGlobal).bindPopup(`<b>${escaparHtml(ev.titulo)}</b><br>${escaparHtml(obtenerGrupoEvento(ev))}<br>🔥 Actividad Live: ${ev.afluenciaEnVivo || 0} pts`);
+            marcadores.push(marcador);
         }
     });
+
+    if (marcadores.length === 1) {
+        const ll = marcadores[0].getLatLng();
+        mapGlobal.setView([ll.lat, ll.lng], 13, { animate: false });
+    } else if (marcadores.length > 1) {
+        const grupo = L.featureGroup(marcadores);
+        mapGlobal.fitBounds(grupo.getBounds(), { padding: [26, 26], maxZoom: 14, animate: false });
+    }
+
+    setTimeout(() => {
+        if (mapGlobal) mapGlobal.invalidateSize(true);
+    }, 60);
+
     eventosVisibles.forEach(ev => {
         const div = document.createElement('div');
         div.className = 'card';
@@ -1811,8 +1810,15 @@ function abrirModalEditarPerfil() {
         perfilSolicitud.value = '';
         rellenarVerificacionPromotorPerfil({});
     }
-    if (usuarioConectado.fotos && usuarioConectado.fotos[0]) {
-        document.getElementById('previewFoto').src = resolverUrlMedia(usuarioConectado.fotos[0]);
+    const previewFoto = document.getElementById('previewFoto');
+    if (previewFoto) {
+        const srcFotoPerfil = obtenerFotoPerfil(usuarioConectado);
+        const srcFallback = generarAvatarIniciales(usuarioConectado?.nombre || 'Usuario', usuarioConectado?.colorSemaforo || 'AMARILLO');
+        previewFoto.onerror = () => {
+            previewFoto.onerror = null;
+            previewFoto.src = srcFallback;
+        };
+        previewFoto.src = srcFotoPerfil || srcFallback;
     }
     document.getElementById('modalEditarPerfil').style.display = 'block';
 }

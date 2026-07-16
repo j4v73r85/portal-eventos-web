@@ -611,6 +611,32 @@ function irAlPrimerPlanFiestas() {
     setTimeout(() => abrirModalDetalle(eventoFiesta._id), 260);
 }
 
+function irADetalleEventoDesdeMapa(idEvento) {
+    if (!idEvento) return;
+
+    if (mapGlobal) mapGlobal.closePopup();
+
+    let contenedor = document.getElementById('eventosContenedor');
+    let tarjeta = contenedor?.querySelector(`[data-evento-id="${idEvento}"]`);
+
+    if (!tarjeta) {
+        grupoEventosActual = 'todos';
+        renderizarListaYMapa();
+        contenedor = document.getElementById('eventosContenedor');
+        tarjeta = contenedor?.querySelector(`[data-evento-id="${idEvento}"]`);
+    }
+
+    if (tarjeta) {
+        tarjeta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        tarjeta.classList.add('resaltado-plan');
+        setTimeout(() => tarjeta.classList.remove('resaltado-plan'), 2300);
+    } else if (contenedor) {
+        contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    setTimeout(() => abrirModalDetalle(idEvento), 260);
+}
+
 function inicializarAccesosRapidosFranja() {
     const btnMapa = document.getElementById('btnIrMapaInteres');
     const btnFiestas = document.getElementById('btnIrFiestas');
@@ -703,6 +729,7 @@ function renderizarListaYMapa() {
         const lon = Number(ev?.ubicacion?.coordenadas?.longitud);
         if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
             const temperatura = Math.min(30 + (ev.afluenciaEnVivo || 0), 100);
+            const accionDetalle = `<button type="button" class="btn-secondary" style="margin-top:8px;padding:6px 10px;font-size:0.8rem;" onclick='irADetalleEventoDesdeMapa(${JSON.stringify(ev._id)})'>Ver evento</button>`;
             const marcador = L.circleMarker([lat, lon], {
                 radius: temperatura / 2,
                 fillColor: ev.esPremium ? '#f59e0b' : '#a855f7',
@@ -710,7 +737,7 @@ function renderizarListaYMapa() {
                 weight: 1,
                 opacity: 0.8,
                 fillOpacity: 0.35
-            }).addTo(mapGlobal).bindPopup(`<b>${escaparHtml(ev.titulo)}</b><br>${escaparHtml(obtenerGrupoEvento(ev))}<br>🔥 Actividad Live: ${ev.afluenciaEnVivo || 0} pts`);
+            }).addTo(mapGlobal).bindPopup(`<b>${escaparHtml(ev.titulo)}</b><br>${escaparHtml(obtenerGrupoEvento(ev))}<br>🔥 Actividad Live: ${ev.afluenciaEnVivo || 0} pts<br>${accionDetalle}`);
             marcadores.push(marcador);
         }
     });

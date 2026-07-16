@@ -796,8 +796,6 @@ function renderizarListaYMapa() {
                     <span class="evento-card-precio">${escaparHtml(precioEtiqueta)}</span>
                 </div>
 
-                <p class="evento-card-organizador">Organiza: ${escaparHtml(ev.organizador || 'Organizacion pendiente')}</p>
-
                 <button type="button" class="btn-secondary evento-card-cta" onclick='abrirModalDetalle(${idEventoSerializado})'>Ver detalles</button>
             </div>
         `;

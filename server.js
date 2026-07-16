@@ -1253,6 +1253,61 @@ function puedeGestionarEventos(usuario) {
     return (usuario.esAdmin === true && esSuperadminEmail(usuario.email)) || usuario.esModerador === true;
 }
 
+const LIMPIEZA_EVENTOS_CADUCADOS_MS = 6 * 60 * 60 * 1000;
+
+function obtenerFechaFinRealEvento(evento) {
+    const base = evento?.fechaFin || evento?.fechaInicio;
+    if (!base) return null;
+
+    const fecha = new Date(base);
+    if (Number.isNaN(fecha.getTime())) return null;
+
+    const esMedianocheUtc =
+        fecha.getUTCHours() === 0 &&
+        fecha.getUTCMinutes() === 0 &&
+        fecha.getUTCSeconds() === 0 &&
+        fecha.getUTCMilliseconds() === 0;
+
+    if (!esMedianocheUtc) return fecha;
+
+    // Si la fecha viene sin hora (00:00), se considera vigente hasta el final de ese día.
+    return new Date(Date.UTC(
+        fecha.getUTCFullYear(),
+        fecha.getUTCMonth(),
+        fecha.getUTCDate(),
+        23,
+        59,
+        59,
+        999
+    ));
+}
+
+function eventoEstaCaducado(evento, ahora = new Date()) {
+    const fechaFinReal = obtenerFechaFinRealEvento(evento);
+    if (!fechaFinReal) return false;
+    return fechaFinReal.getTime() < ahora.getTime();
+}
+
+async function limpiarEventosCaducados() {
+    try {
+        const eventos = await Evento.find().select('_id titulo fechaInicio fechaFin').lean();
+        const ahora = new Date();
+        const idsCaducados = eventos
+            .filter((evento) => eventoEstaCaducado(evento, ahora))
+            .map((evento) => evento._id);
+
+        if (idsCaducados.length === 0) return 0;
+
+        const resultado = await Evento.deleteMany({ _id: { $in: idsCaducados } });
+        const borrados = typeof resultado.deletedCount === 'number' ? resultado.deletedCount : 0;
+        console.log(`🧹 Limpieza automática: ${borrados} evento(s) caducado(s) eliminado(s).`);
+        return borrados;
+    } catch (error) {
+        console.error('❌ Error limpiando eventos caducados:', error.message);
+        return 0;
+    }
+}
+
 // Conexión a MongoDB y sincronización de índices
 mongoose.connect(MONGODB_URI)
   .then(async () => {
@@ -1301,6 +1356,11 @@ mongoose.connect(MONGODB_URI)
               { emailVerificado: { $exists: false } },
               { $set: { emailVerificado: true } }
           );
+
+          await limpiarEventosCaducados();
+          setInterval(() => {
+              limpiarEventosCaducados();
+          }, LIMPIEZA_EVENTOS_CADUCADOS_MS);
       } catch (e) { console.error('Error al inicializar datos:', e); }
   })
   .catch(err => console.error('❌ Error de conexión:', err));
@@ -1341,9 +1401,10 @@ app.get('/api/media/:id/:nombre', servirMediaPublica);
 app.get('/api/eventos', async (req, res) => {
     try {
         const eventos = await Evento.find().lean();
+        const eventosActivos = eventos.filter((evento) => !eventoEstaCaducado(evento));
         if (req.authUser?._id) {
             const usuario = await Usuario.findById(req.authUser._id).select('preferenciasPlanes').lean();
-            const eventosOrdenados = eventos
+            const eventosOrdenados = eventosActivos
                 .map((evento) => ({
                     ...evento,
                     __scorePreferencia: scoreEventoPorPreferencias(usuario, evento)
@@ -1359,7 +1420,7 @@ app.get('/api/eventos', async (req, res) => {
                 .map(({ __scorePreferencia, ...evento }) => evento);
             return res.json(eventosOrdenados);
         }
-        res.json(eventos);
+        res.json(eventosActivos);
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 

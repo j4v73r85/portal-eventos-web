@@ -21,7 +21,7 @@ const eventoNuevo = {
     galeria: [],
     ubicacion: {
         direccion: 'Torredembarra, Baix Gaià, Tarragona',
-        coordenadas: { latitud: 41.2519, longitud: 1.4483 }
+        coordenadas: { latitud: 41.1459, longitud: 1.3974 }
     },
     fuente: {
         nombre: 'femturisme.cat',

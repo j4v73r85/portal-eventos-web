@@ -32,8 +32,8 @@ async function insertarCorrectamente() {
             ubicacion: {
                 direccion: 'Torredembarra, Baix Gaià, Tarragona, España',
                 coordenadas: {
-                    latitud: 41.2519,
-                    longitud: 1.4483
+                    latitud: 41.1459,
+                    longitud: 1.3974
                 },
                 placeId: 'ChIJVVVVVVVVVBIRxxxxxx',
                 countryCode: 'ES',
@@ -69,7 +69,7 @@ async function insertarCorrectamente() {
         console.log(`   Latitud: ${verificar.ubicacion.coordenadas.latitud}`);
         console.log(`   Longitud: ${verificar.ubicacion.coordenadas.longitud}`);
         
-        if (verificar.ubicacion.coordenadas.latitud === 41.2519) {
+        if (verificar.ubicacion.coordenadas.latitud === 41.1459) {
             console.log('   ✅ Coordenadas correctas!');
         }
 

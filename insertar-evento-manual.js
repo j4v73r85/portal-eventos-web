@@ -26,8 +26,8 @@ const eventoNuevo = {
     ubicacion: {
         direccion: 'Torredembarra, Tarragona, España',
         coordenadas: { 
-            latitud: 41.2519, 
-            longitud: 1.4483 
+            latitud: 41.1459, 
+            longitud: 1.3974 
         },
         placeId: 'ChIJVVVVVVVVVBIR-xxxxxx',
         countryCode: 'ES',

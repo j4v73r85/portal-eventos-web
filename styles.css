@@ -699,7 +699,19 @@ button.icono-beneficio:focus-visible .icono-tooltip {
     box-shadow: 0 16px 36px rgba(34, 232, 255, 0.15);
 }
 
-.imagen-portada-card { width: 100%; height: 180px; object-fit: cover; border-bottom: 1px solid #334155; display: block; }
+.imagen-portada-card {
+    width: 100%;
+    height: 210px;
+    object-fit: cover;
+    object-position: center 38%;
+    border-bottom: 1px solid #334155;
+    display: block;
+    transition: transform 0.28s ease, filter 0.28s ease;
+}
+.card:hover .imagen-portada-card {
+    transform: scale(1.04);
+    filter: saturate(1.08) contrast(1.04);
+}
 .contenido-card { padding: 20px; }
 
 .audio-live-box { background: #0f172a; padding: 12px; border-radius: 10px; margin: 10px 0; border: 1px solid #1e1b4b; }
@@ -847,7 +859,50 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 }
 
 .grid-galeria-detalles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin: 15px 0; }
-.media-detalle-item { width: 100%; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid #334155; background: #0f172a; }
+.media-detalle-item { width: 100%; height: 110px; object-fit: cover; object-position: center 35%; border-radius: 8px; border: 1px solid #334155; background: #0f172a; }
+.media-detalle-clickable { cursor: zoom-in; transition: transform 0.2s ease, border-color 0.2s ease; }
+.media-detalle-clickable:hover { transform: scale(1.02); border-color: rgba(34, 232, 255, 0.55); }
+
+#modalImagenEventoGrande {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 3200;
+    background: rgba(1, 4, 12, 0.94);
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+#modalImagenEventoGrande.activo {
+    display: flex;
+}
+
+#modalImagenEventoGrande img {
+    max-width: min(1400px, 95vw);
+    max-height: 92vh;
+    width: auto;
+    height: auto;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+}
+
+.cerrar-visor-imagen {
+    position: fixed;
+    top: 18px;
+    right: 20px;
+    width: 42px;
+    height: 42px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.92);
+    color: #f8fafc;
+    font-size: 1.25rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+}
 
 .grid-edicion-multimedia { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-bottom: 15px; background: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #475569; }
 .item-edicion-media { position: relative; width: 100%; height: 80px; border-radius: 6px; overflow: hidden; border: 1px solid #334155; }

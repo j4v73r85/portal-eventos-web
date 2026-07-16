@@ -886,7 +886,7 @@ function abrirModalDetalle(idEvento) {
         if (ev.multimediaUrl.endsWith('.mp4') || ev.multimediaUrl.endsWith('.mov')) {
             galeriaMediaHTML += `<video src="${ev.multimediaUrl}" class="media-detalle-item" controls></video>`;
         } else {
-            galeriaMediaHTML += `<img src="${ev.multimediaUrl}" class="media-detalle-item" alt="Media Principal">`;
+            galeriaMediaHTML += `<img src="${ev.multimediaUrl}" class="media-detalle-item media-detalle-clickable" data-fullsrc="${ev.multimediaUrl}" alt="Media Principal">`;
         }
     }
     if (ev.galeria && ev.galeria.length > 0) {
@@ -894,13 +894,13 @@ function abrirModalDetalle(idEvento) {
             if (url.endsWith('.mp4') || url.endsWith('.mov')) {
                 galeriaMediaHTML += `<video src="${url}" class="media-detalle-item" controls></video>`;
             } else {
-                galeriaMediaHTML += `<img src="${url}" class="media-detalle-item" alt="Galería">`;
+                galeriaMediaHTML += `<img src="${url}" class="media-detalle-item media-detalle-clickable" data-fullsrc="${url}" alt="Galería">`;
             }
         });
     } else if (!ev.multimediaUrl) {
         galeriaMediaHTML += `
-            <img src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400" class="media-detalle-item" alt="Demo 1">
-            <img src="https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400" class="media-detalle-item" alt="Demo 2">
+            <img src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400" class="media-detalle-item media-detalle-clickable" data-fullsrc="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1400" alt="Demo 1">
+            <img src="https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400" class="media-detalle-item media-detalle-clickable" data-fullsrc="https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1400" alt="Demo 2">
         `;
     }
     const esOrganizador = usuarioConectado && usuarioConectado.nombre.trim().toLowerCase() === ev.organizador.trim().toLowerCase();
@@ -934,6 +934,15 @@ function abrirModalDetalle(idEvento) {
         ${botonBorrarHTML}
         ${estaDeshabilitado ? `<p style="text-align:center; font-size:0.8rem; color:var(--premium-gold); margin-top:10px; font-weight:bold;">⚠️ Inicia sesión para interactuar con este plan e ingresar al chat grupal.</p>` : ''}
     `;
+
+    contenedorModal.querySelectorAll('.media-detalle-clickable').forEach((img) => {
+        img.addEventListener('click', () => {
+            const srcGrande = img.getAttribute('data-fullsrc') || img.getAttribute('src') || '';
+            if (!srcGrande) return;
+            abrirImagenEventoEnGrande(srcGrande, img.getAttribute('alt') || ev.titulo || 'Imagen del evento');
+        });
+    });
+
     document.getElementById('modalDetalleEvento').style.display = 'block';
 }
 
@@ -1029,6 +1038,43 @@ async function handleFormEditarEvento(e) {
 document.getElementById('formEditarEvento').onsubmit = handleFormEditarEvento;
 
 function cerrarModalDetalle() { document.getElementById('modalDetalleEvento').style.display = 'none'; }
+
+function asegurarVisorImagenEvento() {
+    let visor = document.getElementById('modalImagenEventoGrande');
+    if (visor) return visor;
+
+    visor = document.createElement('div');
+    visor.id = 'modalImagenEventoGrande';
+    visor.innerHTML = `
+        <button type="button" class="cerrar-visor-imagen" aria-label="Cerrar imagen">✕</button>
+        <img id="imagenEventoGrande" alt="Imagen ampliada del evento">
+    `;
+    document.body.appendChild(visor);
+
+    visor.addEventListener('click', (e) => {
+        if (e.target === visor || e.target.classList.contains('cerrar-visor-imagen')) {
+            visor.classList.remove('activo');
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            visor.classList.remove('activo');
+        }
+    });
+
+    return visor;
+}
+
+function abrirImagenEventoEnGrande(src, alt = 'Imagen del evento') {
+    const visor = asegurarVisorImagenEvento();
+    const img = document.getElementById('imagenEventoGrande');
+    if (!img) return;
+    img.src = src;
+    img.alt = alt;
+    visor.classList.add('activo');
+}
+
 function abrirModalRedireccion() { document.getElementById('modalSolicitudPromotor').style.display = 'block'; }
 function cerrarModalRedireccion() { document.getElementById('modalSolicitudPromotor').style.display = 'none'; }
 

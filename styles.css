@@ -257,27 +257,49 @@ a {
     border-radius: 22px;
     border: 1px solid rgba(255, 79, 179, 0.16);
     background: linear-gradient(180deg, rgba(14, 17, 31, 0.96), rgba(8, 10, 17, 0.9));
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+    background: linear-gradient(165deg, rgba(8, 11, 24, 0.98), rgba(15, 9, 33, 0.98));
 }
 .event-tabs-header {
-    display: flex;
+    border: 1px solid rgba(255, 46, 166, 0.28);
     justify-content: space-between;
     align-items: flex-start;
-    gap: 16px;
+    transition: transform 0.26s, border-color 0.26s, box-shadow 0.26s;
     margin-bottom: 14px;
-}
+    box-shadow: 0 24px 44px rgba(5, 7, 18, 0.72);
+    isolation: isolate;
 .event-tabs-header h3 {
     margin-bottom: 4px;
+#eventosContenedor .card::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(120deg, rgba(34, 232, 255, 0.75), rgba(236, 72, 153, 0.7), rgba(250, 204, 21, 0.7));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.85;
+    pointer-events: none;
+    z-index: 3;
+    animation: bordeNeonTarjeta 5.4s linear infinite;
+}
+
     color: var(--text-main);
     font-size: 1.25rem;
 }
 .event-tabs-header p {
     color: var(--text-muted);
     line-height: 1.45;
-    font-size: 0.95rem;
+@keyframes bordeNeonTarjeta {
+    0% { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(360deg); }
 }
+
+    font-size: 0.95rem;
+    transform: translateY(-4px) scale(1.01);
 .event-tabs-badge {
-    padding: 8px 12px;
+    box-shadow: 0 30px 58px rgba(34, 232, 255, 0.24);
     border-radius: 999px;
     background: rgba(255, 79, 179, 0.12);
     border: 1px solid rgba(255, 79, 179, 0.22);
@@ -714,12 +736,13 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 .evento-card-media {
     position: relative;
     border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    clip-path: polygon(0 0, 100% 0, 100% 90%, 0 100%);
 }
 
 .evento-card-vignette {
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, rgba(8, 11, 24, 0.05) 10%, rgba(8, 11, 24, 0.4) 100%);
+    background: linear-gradient(180deg, rgba(8, 11, 24, 0.02) 0%, rgba(8, 11, 24, 0.5) 84%, rgba(8, 11, 24, 0.78) 100%);
     pointer-events: none;
 }
 
@@ -732,6 +755,7 @@ button.icono-beneficio:focus-visible .icono-tooltip {
     justify-content: space-between;
     align-items: center;
     gap: 10px;
+    z-index: 2;
 }
 
 .evento-card-fecha {
@@ -747,20 +771,28 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 }
 
 .contenido-card {
-    padding: 16px 18px 18px;
+    position: relative;
+    z-index: 2;
+    margin: -26px 12px 12px;
+    padding: 14px 14px 14px;
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(11, 18, 39, 0.86), rgba(20, 15, 45, 0.82));
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    backdrop-filter: blur(8px);
 }
 
 .evento-card-titulo {
     margin: 0;
     color: #f8fafc;
     line-height: 1.2;
-    font-size: 1.08rem;
+    font-size: 1.13rem;
+    letter-spacing: 0.01em;
 }
 
 .evento-card-descripcion {
     margin: 9px 0 12px;
     color: var(--text-muted);
-    font-size: 0.86rem;
+    font-size: 0.85rem;
     line-height: 1.45;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -774,7 +806,7 @@ button.icono-beneficio:focus-visible .icono-tooltip {
     gap: 10px;
     align-items: center;
     font-size: 0.82rem;
-    background: linear-gradient(130deg, rgba(15, 23, 42, 0.92), rgba(30, 27, 75, 0.7));
+    background: linear-gradient(130deg, rgba(9, 15, 31, 0.92), rgba(37, 20, 73, 0.74));
     border: 1px solid rgba(148, 163, 184, 0.2);
     padding: 9px 10px;
     border-radius: 12px;
@@ -791,13 +823,29 @@ button.icono-beneficio:focus-visible .icono-tooltip {
     font-weight: 800;
 }
 
+.evento-card-organizador {
+    margin: 8px 0 0;
+    font-size: 0.74rem;
+    color: rgba(226, 232, 240, 0.8);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 .evento-card-cta {
     margin-top: 10px;
     width: 100%;
     border-radius: 12px;
-    padding: 10px 12px;
-    font-size: 0.85rem;
+    padding: 11px 12px;
+    font-size: 0.84rem;
     font-weight: 700;
+    border: 1px solid rgba(34, 232, 255, 0.35);
+    background: linear-gradient(120deg, rgba(37, 99, 235, 0.28), rgba(168, 85, 247, 0.3));
+    color: #dbeafe;
+}
+
+.evento-card-cta:hover {
+    border-color: rgba(34, 232, 255, 0.62);
+    box-shadow: 0 10px 24px rgba(34, 232, 255, 0.2);
 }
 
 @media (max-width: 700px) {
@@ -807,6 +855,11 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 
     .imagen-portada-card {
         height: 185px;
+    }
+
+    .contenido-card {
+        margin: -18px 9px 9px;
+        padding: 12px 12px 13px;
     }
 
     .evento-card-meta {

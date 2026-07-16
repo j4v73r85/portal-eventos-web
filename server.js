@@ -155,7 +155,8 @@ app.use(helmet({
                 'https://*.tile.openstreetmap.org',
                 'https://*.basemaps.cartocdn.com',
                 'https://unpkg.com',
-                'https://femturisme.cat'
+                'https://femturisme.cat',
+                'https://surtdecasa.cat'
             ],
             connectSrc: [
                 "'self'",

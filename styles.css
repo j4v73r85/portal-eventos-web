@@ -637,7 +637,7 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 
 .tinder-wrapper {
     position: relative;
-    height: 420px;
+    height: 470px;
     width: 100%;
     max-width: 1100px;
     overflow: hidden;
@@ -646,12 +646,12 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 
 .tinder-card {
     position: absolute; width: 100%; height: 100%; background: #1e1b4b;
-    border-radius: 24px; border: 3px solid var(--premium-gold);
+    border-radius: 24px; border: 2px solid rgba(250, 204, 21, 0.65);
     display: flex; flex-direction: column; justify-content: space-between;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5); opacity: 0; pointer-events: none;
+    box-shadow: 0 24px 52px rgba(0, 0, 0, 0.55); opacity: 0; pointer-events: none;
     transition: transform 0.5s ease, opacity 0.5s ease;
     background-size: cover;
-    background-position: center;
+    background-position: center 32%;
     overflow: hidden;
     cursor: pointer;
 }
@@ -659,9 +659,88 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 
 .tinder-card-overlay {
     position: absolute; top:0; left:0; width:100%; height:100%;
-    background: linear-gradient(to bottom, rgba(15,23,42,0.4) 0%, rgba(15,23,42,0.95) 100%);
+    background: linear-gradient(180deg, rgba(6, 10, 18, 0.16) 0%, rgba(8, 12, 22, 0.62) 52%, rgba(6, 10, 18, 0.94) 100%);
     display: flex; flex-direction: column; justify-content: space-between;
-    padding: 35px; z-index: 2;
+    padding: 24px; z-index: 2;
+}
+
+.tinder-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.tinder-premium-badge {
+    background: linear-gradient(120deg, #facc15, #f59e0b);
+    color: #111827;
+    font-size: 0.76rem;
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    box-shadow: 0 8px 20px rgba(245, 158, 11, 0.32);
+}
+
+.tinder-categoria-chip {
+    background: rgba(79, 70, 229, 0.9);
+    border: 1px solid rgba(167, 139, 250, 0.62);
+    font-size: 0.72rem;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #eef2ff;
+}
+
+.tinder-main-content {
+    margin-top: auto;
+    padding: 16px 16px 14px;
+    border-radius: 16px;
+    background: linear-gradient(150deg, rgba(10, 16, 32, 0.9), rgba(19, 14, 38, 0.84));
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    backdrop-filter: blur(6px);
+}
+
+.tinder-titulo {
+    margin: 0;
+    font-size: clamp(1.5rem, 2.2vw, 2.25rem);
+    color: #ffffff;
+    font-weight: 900;
+    line-height: 1.08;
+    text-shadow: 0 8px 20px rgba(0, 0, 0, 0.42);
+}
+
+.tinder-descripcion {
+    margin: 10px 0 0;
+    font-size: 0.95rem;
+    color: #e2e8f0;
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.tinder-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.tinder-meta-pill {
+    background: rgba(15, 23, 42, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    color: #f1f5f9;
+}
+
+.tinder-meta-pill.precio {
+    color: #86efac;
+    border-color: rgba(16, 185, 129, 0.42);
 }
 
 .barra-tiempo-container { width: 100%; background: rgba(255,255,255,0.2); height: 5px; border-radius: 3px; margin-top: 15px; overflow: hidden; }
@@ -848,17 +927,34 @@ button.icono-beneficio:focus-visible .icono-tooltip {
     display: inline-flex;
     align-items: center;
     margin-top: 10px;
-    padding: 7px 11px;
+    padding: 8px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(250, 204, 21, 0.45);
-    background: rgba(7, 11, 24, 0.82);
+    border: 1px solid rgba(250, 204, 21, 0.58);
+    background: linear-gradient(120deg, rgba(251, 191, 36, 0.2), rgba(120, 53, 15, 0.22));
     color: #fde68a;
-    font-size: 0.88rem;
-    font-weight: 800;
+    font-size: 0.92rem;
+    font-weight: 900;
     letter-spacing: 0.03em;
 }
 
+.tinder-main-content .barra-tiempo-container {
+    margin-top: 12px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
 @media (max-width: 900px) {
+    .tinder-wrapper {
+        height: 430px;
+    }
+
+    .tinder-card-overlay {
+        padding: 16px;
+    }
+
+    .tinder-main-content {
+        padding: 12px;
+    }
+
     #eventosContenedor {
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     }
@@ -892,6 +988,14 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 
     .tinder-fecha-destacada {
         font-size: 0.8rem;
+    }
+
+    .tinder-wrapper {
+        height: 390px;
+    }
+
+    .tinder-meta-pill {
+        font-size: 0.74rem;
     }
 }
 

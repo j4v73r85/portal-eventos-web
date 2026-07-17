@@ -874,18 +874,18 @@ function activarModoTinder() {
         card.style.backgroundImage = `url('${urlFondo}')`;
         card.innerHTML = `
             <div class="tinder-card-overlay">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="background:var(--premium-gold); color:black; font-size:0.8rem; padding:6px 14px; border-radius:12px; font-weight:800; letter-spacing:1px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">⭐ DESTACADO PREMIUM</span>
-                    <span style="background:#4f46e5; font-size:0.75rem; padding:5px 10px; border-radius:8px; font-weight:bold;">${ev.categoria}</span>
+                <div class="tinder-topbar">
+                    <span class="tinder-premium-badge">⭐ DESTACADO PREMIUM</span>
+                    <span class="tinder-categoria-chip">${ev.categoria}</span>
                 </div>
-                <div style="margin-bottom: 5px;">
-                    <h3 style="font-size: 2.2rem; color:white; font-weight: 800; line-height: 1.1; text-shadow: 0 2px 8px rgba(0,0,0,0.8);">${ev.titulo}</h3>
+                <div class="tinder-main-content">
+                    <h3 class="tinder-titulo">${ev.titulo}</h3>
                     <div class="tinder-fecha-destacada">📅 ${escaparHtml(fechaResumenPremium.rango)}</div>
-                    <p style="font-size:1rem; color:#e2e8f0; margin-top:10px; line-height:1.4; max-width: 800px; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">${urlify(ev.descripcion)}</p>
-                    <div style="display:flex; gap:20px; margin-top:15px; font-size:0.9rem; color:#f1f5f9; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">
-                        <span>🏢 Promueve: <b>${ev.organizador}</b></span>
-                        <span>📍 Ubicación: <b>${ev.ubicacion?.direccion?.substring(0,50) || 'No especificada'}...</b></span>
-                        <span style="color:#34d399; font-weight:bold;">💵 Precio: ${ev.precio===0?'Gratis':ev.precio+'€'}</span>
+                    <p class="tinder-descripcion">${urlify(ev.descripcion)}</p>
+                    <div class="tinder-meta-row">
+                        <span class="tinder-meta-pill">🏢 ${ev.organizador || 'Organizador pendiente'}</span>
+                        <span class="tinder-meta-pill">📍 ${ev.ubicacion?.direccion?.substring(0,50) || 'Ubicacion no especificada'}...</span>
+                        <span class="tinder-meta-pill precio">💵 ${ev.precio===0?'Gratis':ev.precio+'€'}</span>
                     </div>
                     <div class="barra-tiempo-container">
                         <div class="barra-tiempo-progreso" id="barraProgreso-${idx}"></div>

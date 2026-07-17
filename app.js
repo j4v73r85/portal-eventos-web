@@ -2371,6 +2371,7 @@ function renderAdminUserCard(usuario) {
     const tipo = verif.tipoPromotorLegal || 'No definido';
     const nif = verif.nifCif || 'No indicado';
     const contacto = verif.telefonoProfesional || 'Sin teléfono';
+    const mostrarBtnEliminarSolicitud = Boolean(usuario.solicitudPromotor) || (usuario.tipoUsuario === 'PROMOTOR' && !usuario.promotorAprobado);
     const acceso = usuario.tipoUsuario === 'PROMOTOR' && usuario.promotorAprobado
         ? 'PROMOTOR ACTIVO'
         : usuario.tipoUsuario === 'PROMOTOR'
@@ -2390,6 +2391,7 @@ function renderAdminUserCard(usuario) {
                 <button onclick="cambiarAccesoPromotor('${usuario._id}', 'aprobar')" style="background:#10b981; color:white; border:none; border-radius:10px; padding:8px 12px; cursor:pointer;">Dar acceso promotor</button>
                 <button onclick="cambiarAccesoPromotor('${usuario._id}', 'pendiente')" style="background:#f59e0b; color:#111827; border:none; border-radius:10px; padding:8px 12px; cursor:pointer;">Dejar pendiente</button>
                 <button onclick="cambiarAccesoPromotor('${usuario._id}', 'denegar')" style="background:#ef4444; color:white; border:none; border-radius:10px; padding:8px 12px; cursor:pointer;">Denegar y pasar a cliente</button>
+                ${mostrarBtnEliminarSolicitud ? `<button onclick="eliminarSolicitudPromotor('${usuario._id}')" style="background:#475569; color:white; border:none; border-radius:10px; padding:8px 12px; cursor:pointer;">Eliminar solicitud</button>` : ''}
                 <a href="${obtenerUrlWhatsappAdmin(usuario)}" target="_blank" style="background:#25d366; color:#052e16; border-radius:10px; padding:8px 12px; text-decoration:none; font-weight:700;">WhatsApp directo</a>
             </div>
         </div>
@@ -2427,6 +2429,12 @@ function abrirModalSolicitudesPromotor() {
     document.getElementById('modalPromotorSolicitudes').style.display = 'block';
 }
 
+async function eliminarSolicitudPromotor(usuarioId) {
+    const confirmado = confirm('¿Seguro que quieres eliminar esta solicitud de promotor? El usuario volverá a perfil cliente.');
+    if (!confirmado) return;
+    await cambiarAccesoPromotor(usuarioId, 'eliminar_solicitud');
+}
+
 async function cambiarAccesoPromotor(usuarioId, accion) {
     try {
         let payload = {};
@@ -2435,6 +2443,8 @@ async function cambiarAccesoPromotor(usuarioId, accion) {
         } else if (accion === 'pendiente') {
             payload = { tipoUsuario: 'PROMOTOR', promotorAprobado: false };
         } else if (accion === 'denegar') {
+            payload = { tipoUsuario: 'CLIENTE', promotorAprobado: false, solicitudPromotor: '' };
+        } else if (accion === 'eliminar_solicitud') {
             payload = { tipoUsuario: 'CLIENTE', promotorAprobado: false, solicitudPromotor: '' };
         }
         const res = await fetch(`${API_BASE}/api/usuarios/${usuarioId}`, {

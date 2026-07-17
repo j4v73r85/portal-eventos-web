@@ -747,16 +747,31 @@ button.icono-beneficio:focus-visible .icono-tooltip {
     gap: 8px;
 }
 
-.evento-card-fecha {
-    padding: 6px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(250, 204, 21, 0.42);
-    background: rgba(13, 17, 30, 0.88);
+.evento-card-fecha-principal {
+    min-width: 62px;
+    padding: 6px 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(250, 204, 21, 0.48);
+    background: linear-gradient(180deg, rgba(20, 21, 33, 0.9), rgba(14, 10, 28, 0.95));
+    display: grid;
+    justify-items: center;
+    line-height: 1;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+
+.evento-fecha-dia {
     color: #fde68a;
-    font-size: 0.72rem;
+    font-size: 1.2rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+}
+
+.evento-fecha-mes {
+    color: #facc15;
+    font-size: 0.66rem;
     font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 3px;
 }
 
 #eventosContenedor .contenido-card {
@@ -772,6 +787,17 @@ button.icono-beneficio:focus-visible .icono-tooltip {
     color: #f8fafc;
     line-height: 1.24;
     font-size: 1.02rem;
+}
+
+.evento-card-fecha-rango {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #fde68a;
+    background: rgba(59, 41, 10, 0.34);
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 9px;
+    padding: 6px 8px;
 }
 
 .evento-card-descripcion {
@@ -818,6 +844,20 @@ button.icono-beneficio:focus-visible .icono-tooltip {
     font-weight: 700;
 }
 
+.tinder-fecha-destacada {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 10px;
+    padding: 7px 11px;
+    border-radius: 10px;
+    border: 1px solid rgba(250, 204, 21, 0.45);
+    background: rgba(7, 11, 24, 0.82);
+    color: #fde68a;
+    font-size: 0.88rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+}
+
 @media (max-width: 900px) {
     #eventosContenedor {
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -840,6 +880,18 @@ button.icono-beneficio:focus-visible .icono-tooltip {
 
     .evento-card-meta {
         grid-template-columns: 1fr;
+    }
+
+    .evento-card-fecha-principal {
+        min-width: 56px;
+    }
+
+    .evento-fecha-dia {
+        font-size: 1.05rem;
+    }
+
+    .tinder-fecha-destacada {
+        font-size: 0.8rem;
     }
 }
 

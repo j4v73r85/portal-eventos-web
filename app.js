@@ -570,6 +570,49 @@ function normalizarTextoBusqueda(valor = '') {
         .replace(/[\u0300-\u036f]/g, '');
 }
 
+function obtenerResumenFechaEvento(fechaInicioRaw, fechaFinRaw) {
+    const fechaInicio = fechaInicioRaw ? new Date(fechaInicioRaw) : null;
+    const fechaFin = fechaFinRaw ? new Date(fechaFinRaw) : null;
+
+    if (!fechaInicio || Number.isNaN(fechaInicio.getTime())) {
+        return {
+            dia: '--',
+            mes: 'SIN FECHA',
+            rango: 'Fecha pendiente'
+        };
+    }
+
+    const dia = String(fechaInicio.getDate()).padStart(2, '0');
+    const mes = fechaInicio.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '').toUpperCase();
+
+    if (!fechaFin || Number.isNaN(fechaFin.getTime())) {
+        return {
+            dia,
+            mes,
+            rango: fechaInicio.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })
+        };
+    }
+
+    const mismaFecha =
+        fechaInicio.getFullYear() === fechaFin.getFullYear() &&
+        fechaInicio.getMonth() === fechaFin.getMonth() &&
+        fechaInicio.getDate() === fechaFin.getDate();
+
+    if (mismaFecha) {
+        return {
+            dia,
+            mes,
+            rango: fechaInicio.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })
+        };
+    }
+
+    return {
+        dia,
+        mes,
+        rango: `${fechaInicio.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })} - ${fechaFin.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}`
+    };
+}
+
 function irAlMapaInteractivo() {
     const mapaEl = document.getElementById('mapaCalorGlobal');
     if (!mapaEl) return;
@@ -770,9 +813,7 @@ function renderizarListaYMapa() {
             imgPortadaHTML = `<img src="https://images.unsplash.com/photo-1506157786151-b8491531f063?w=600" class="imagen-portada-card" alt="Portada por defecto">`;
         }
         const grupoEvento = obtenerGrupoEvento(ev);
-        const fechaEtiqueta = ev.fechaInicio
-            ? new Date(ev.fechaInicio).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
-            : 'Fecha pendiente';
+        const fechaResumen = obtenerResumenFechaEvento(ev.fechaInicio, ev.fechaFin);
         const direccionCorta = ev.ubicacion?.direccion?.substring(0, 56) || 'Ubicacion por confirmar';
         const precioEtiqueta = ev.precio === 0 ? 'Gratis' : `${ev.precio}€`;
         const idEventoSerializado = JSON.stringify(ev._id);
@@ -784,11 +825,15 @@ function renderizarListaYMapa() {
                 <div class="evento-card-vignette"></div>
                 <div class="evento-card-badges">
                     <div class="grupo-evento-chip">${escaparHtml(grupoEvento)}</div>
-                    <div class="evento-card-fecha">${escaparHtml(fechaEtiqueta)}</div>
+                    <div class="evento-card-fecha-principal">
+                        <span class="evento-fecha-dia">${escaparHtml(fechaResumen.dia)}</span>
+                        <span class="evento-fecha-mes">${escaparHtml(fechaResumen.mes)}</span>
+                    </div>
                 </div>
             </div>
             <div class="contenido-card">
                 <h3 class="evento-card-titulo">${ev.titulo}</h3>
+                <p class="evento-card-fecha-rango">📅 ${escaparHtml(fechaResumen.rango)}</p>
                 <p class="evento-card-descripcion">${urlify(ev.descripcion)}</p>
 
                 <div class="evento-card-meta">
@@ -817,6 +862,7 @@ function activarModoTinder() {
         return;
     }
     eventosPremiumTinder.forEach((ev, idx) => {
+        const fechaResumenPremium = obtenerResumenFechaEvento(ev.fechaInicio, ev.fechaFin);
         const card = document.createElement('div');
         card.className = 'tinder-card';
         card.id = `tinderCard-${idx}`;
@@ -834,6 +880,7 @@ function activarModoTinder() {
                 </div>
                 <div style="margin-bottom: 5px;">
                     <h3 style="font-size: 2.2rem; color:white; font-weight: 800; line-height: 1.1; text-shadow: 0 2px 8px rgba(0,0,0,0.8);">${ev.titulo}</h3>
+                    <div class="tinder-fecha-destacada">📅 ${escaparHtml(fechaResumenPremium.rango)}</div>
                     <p style="font-size:1rem; color:#e2e8f0; margin-top:10px; line-height:1.4; max-width: 800px; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">${urlify(ev.descripcion)}</p>
                     <div style="display:flex; gap:20px; margin-top:15px; font-size:0.9rem; color:#f1f5f9; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">
                         <span>🏢 Promueve: <b>${ev.organizador}</b></span>

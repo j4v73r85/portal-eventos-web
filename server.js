@@ -160,7 +160,10 @@ app.use(helmet({
                 'https://agenda.tarragona.cat',
                 'https://www.tarragona.cat',
                 'https://www.taquilla.com',
-                'https://cd1.taquilla.com'
+                'https://cd1.taquilla.com',
+                'https://feverup.com',
+                'https://applications-media.feverup.com',
+                'https://images.feverup.com'
             ],
             connectSrc: [
                 "'self'",

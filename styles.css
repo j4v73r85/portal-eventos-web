@@ -282,9 +282,23 @@ a {
     background: rgba(255, 79, 179, 0.12);
     border: 1px solid rgba(255, 79, 179, 0.22);
     color: #ffd4ea;
-    white-space: nowrap;
     font-weight: 700;
     font-size: 0.82rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.event-tabs-clear {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(15, 23, 42, 0.82);
+    color: #ffffff;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
 }
 .event-tabs-row {
     display: flex;

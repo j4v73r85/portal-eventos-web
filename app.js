@@ -11,6 +11,7 @@ let eventoPendienteChatConsent = null;
 let perfilSeccionActual = 'favoritos';
 let perfilFiltroActual = 'todos';
 let grupoEventosActual = 'todos';
+let focoMapaActual = null;
 let tokenSesion = null;
 let emailPendienteVerificacion = '';
 let redSocialUsuarios = [];
@@ -135,6 +136,11 @@ function obtenerGruposEventosDisponibles() {
 
 function seleccionarGrupoEventos(grupo = 'todos') {
     grupoEventosActual = grupo;
+    renderizarListaYMapa();
+}
+
+function limpiarFocoMapa() {
+    focoMapaActual = null;
     renderizarListaYMapa();
 }
 
@@ -570,6 +576,33 @@ function normalizarTextoBusqueda(valor = '') {
         .replace(/[\u0300-\u036f]/g, '');
 }
 
+function calcularDistanciaSimple(latA, lonA, latB, lonB) {
+    const dLat = latA - latB;
+    const dLon = lonA - lonB;
+    return Math.sqrt((dLat * dLat) + (dLon * dLon));
+}
+
+function obtenerEtiquetaFocoMapa(evento = {}) {
+    const direccion = String(evento?.ubicacion?.direccion || '').trim();
+    if (!direccion) return 'zona seleccionada';
+    const partes = direccion.split(',').map((item) => item.trim()).filter(Boolean);
+    return partes.slice(-2).join(', ') || partes[0] || 'zona seleccionada';
+}
+
+function aplicarFocoMapaDesdeEvento(evento) {
+    const lat = Number(evento?.ubicacion?.coordenadas?.latitud);
+    const lon = Number(evento?.ubicacion?.coordenadas?.longitud);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    focoMapaActual = {
+        latitud: lat,
+        longitud: lon,
+        etiqueta: obtenerEtiquetaFocoMapa(evento)
+    };
+
+    renderizarListaYMapa();
+}
+
 function obtenerResumenFechaEvento(fechaInicioRaw, fechaFinRaw) {
     const fechaInicio = fechaInicioRaw ? new Date(fechaInicioRaw) : null;
     const fechaFin = fechaFinRaw ? new Date(fechaFinRaw) : null;
@@ -738,11 +771,27 @@ function renderizarListaYMapa() {
         grupoEventosActual = 'todos';
     }
 
-    const eventosVisibles = grupoEventosActual === 'todos'
+    let eventosVisibles = grupoEventosActual === 'todos'
         ? todosLosEventos
         : grupoEventosActual === 'Eventos premium'
             ? todosLosEventos.filter((evento) => evento.esPremium)
             : eventosGenerales.filter((evento) => obtenerGrupoEvento(evento) === grupoEventosActual);
+
+    if (focoMapaActual) {
+        eventosVisibles = [...eventosVisibles].sort((a, b) => {
+            const latA = Number(a?.ubicacion?.coordenadas?.latitud);
+            const lonA = Number(a?.ubicacion?.coordenadas?.longitud);
+            const latB = Number(b?.ubicacion?.coordenadas?.latitud);
+            const lonB = Number(b?.ubicacion?.coordenadas?.longitud);
+            const distA = Number.isFinite(latA) && Number.isFinite(lonA)
+                ? calcularDistanciaSimple(latA, lonA, focoMapaActual.latitud, focoMapaActual.longitud)
+                : Number.POSITIVE_INFINITY;
+            const distB = Number.isFinite(latB) && Number.isFinite(lonB)
+                ? calcularDistanciaSimple(latB, lonB, focoMapaActual.latitud, focoMapaActual.longitud)
+                : Number.POSITIVE_INFINITY;
+            return distA - distB;
+        });
+    }
 
     const pestañasHtml = [
         `<button type="button" class="event-tab ${grupoEventosActual === 'todos' ? 'activo' : ''}" onclick="seleccionarGrupoEventos('todos')">Todos <span>${eventosGenerales.length}</span></button>`,
@@ -759,7 +808,9 @@ function renderizarListaYMapa() {
                 <h3>Explora por grupo</h3>
                 <p>Los eventos automáticos entran como genéricos. El premium queda reservado para promotores premium o admin.</p>
             </div>
-            <div class="event-tabs-badge">Mapa interactivo activo</div>
+            <div class="event-tabs-badge">${focoMapaActual
+                ? `Cerca de ${escaparHtml(focoMapaActual.etiqueta)} <button type="button" class="event-tabs-clear" onclick="limpiarFocoMapa()">Quitar</button>`
+                : 'Mapa interactivo activo'}</div>
         </div>
         <div class="event-tabs-row">${pestañasHtml}</div>
     `;
@@ -788,6 +839,7 @@ function renderizarListaYMapa() {
                 opacity: 0.8,
                 fillOpacity: 0.35
             }).addTo(mapGlobal).bindPopup(`<b>${escaparHtml(ev.titulo)}</b><br>${escaparHtml(obtenerGrupoEvento(ev))}<br>🔥 Actividad Live: ${ev.afluenciaEnVivo || 0} pts<br>${accionDetalle}`);
+            marcador.on('click', () => aplicarFocoMapaDesdeEvento(ev));
             marcadores.push(marcador);
         }
     });

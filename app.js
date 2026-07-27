@@ -613,6 +613,13 @@ function obtenerResumenFechaEvento(fechaInicioRaw, fechaFinRaw) {
     };
 }
 
+function obtenerTextoPrecioEvento(precio) {
+    const numero = Number(precio);
+    if (!Number.isFinite(numero)) return 'Consultar';
+    if (numero === 0) return 'Gratis';
+    return `${numero}€`;
+}
+
 function irAlMapaInteractivo() {
     const mapaEl = document.getElementById('mapaCalorGlobal');
     if (!mapaEl) return;
@@ -815,7 +822,7 @@ function renderizarListaYMapa() {
         const grupoEvento = obtenerGrupoEvento(ev);
         const fechaResumen = obtenerResumenFechaEvento(ev.fechaInicio, ev.fechaFin);
         const direccionCorta = ev.ubicacion?.direccion?.substring(0, 56) || 'Ubicacion por confirmar';
-        const precioEtiqueta = ev.precio === 0 ? 'Gratis' : `${ev.precio}€`;
+        const precioEtiqueta = obtenerTextoPrecioEvento(ev.precio);
         const idEventoSerializado = JSON.stringify(ev._id);
         const esOrganizador = usuarioConectado && usuarioConectado.nombre.trim().toLowerCase() === ev.organizador.trim().toLowerCase();
         const esSuperAdminLocal = esSuperAdmin();
@@ -885,7 +892,7 @@ function activarModoTinder() {
                     <div class="tinder-meta-row">
                         <span class="tinder-meta-pill">🏢 ${ev.organizador || 'Organizador pendiente'}</span>
                         <span class="tinder-meta-pill">📍 ${ev.ubicacion?.direccion?.substring(0,50) || 'Ubicacion no especificada'}...</span>
-                        <span class="tinder-meta-pill precio">💵 ${ev.precio===0?'Gratis':ev.precio+'€'}</span>
+                        <span class="tinder-meta-pill precio">💵 ${obtenerTextoPrecioEvento(ev.precio)}</span>
                     </div>
                     <div class="barra-tiempo-container">
                         <div class="barra-tiempo-progreso" id="barraProgreso-${idx}"></div>
@@ -983,7 +990,7 @@ function abrirModalDetalle(idEvento) {
         <div style="background:#0f172a; padding:12px; border-radius:10px; font-size:0.85rem; margin-bottom:20px; border: 1px solid #334155;">
             <p style="margin-bottom:4px;">🏢 <b>Organizador:</b> ${ev.organizador}</p>
             <p style="margin-bottom:4px;">📍 <b>Dirección Completa:</b> ${ev.ubicacion?.direccion || 'No especificada'}</p>
-            <p style="margin-bottom:4px;">💵 <b>Precio Entrada:</b> <span style="color:#10b981; font-weight:bold;">${ev.precio === 0 ? 'Gratis' : ev.precio + '€'}</span></p>
+            <p style="margin-bottom:4px;">💵 <b>Precio Entrada:</b> <span style="color:#10b981; font-weight:bold;">${obtenerTextoPrecioEvento(ev.precio)}</span></p>
             ${ev.fuente && ev.fuente.url ? `<p style="margin-bottom:0;">🔗 <b>Fuente:</b> <a href="${ev.fuente.url}" target="_blank" style="color:#3b82f6; text-decoration:underline;">${ev.fuente.nombre || 'Ver origen'}</a></p>` : ''}
         </div>
         <div class="tinder-controles" style="margin-top:20px;">
@@ -1316,7 +1323,7 @@ function mostrarSeccionPerfil(seccion, filtro = 'todos') {
                             <div>
                                 <strong>${ev.titulo}</strong>
                                 <p class="meta">${ev.ubicacion?.direccion || 'Ubicación no definida'}</p>
-                                <p class="meta">${ev.precio === 0 ? 'Gratis' : ev.precio + '€'}</p>
+                                <p class="meta">${obtenerTextoPrecioEvento(ev.precio)}</p>
                             </div>
                             <div class="perfil-acciones-card">
                                 <button onclick="abrirModalDetalle('${ev._id}')">Ver</button>

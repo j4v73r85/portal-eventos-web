@@ -158,7 +158,9 @@ app.use(helmet({
                 'https://femturisme.cat',
                 'https://surtdecasa.cat',
                 'https://agenda.tarragona.cat',
-                'https://www.tarragona.cat'
+                'https://www.tarragona.cat',
+                'https://www.taquilla.com',
+                'https://cd1.taquilla.com'
             ],
             connectSrc: [
                 "'self'",

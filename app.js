@@ -1001,12 +1001,13 @@ function abrirModalDetalle(idEvento) {
     if (!ev) return;
     const contenedorModal = document.getElementById('contenidoDetalleEvento');
     const estaDeshabilitado = !usuarioConectado;
+    let mediaPrincipalHTML = '';
     let galeriaMediaHTML = '';
     if (ev.multimediaUrl) {
         if (ev.multimediaUrl.endsWith('.mp4') || ev.multimediaUrl.endsWith('.mov')) {
-            galeriaMediaHTML += `<video src="${ev.multimediaUrl}" class="media-detalle-item" controls></video>`;
+            mediaPrincipalHTML = `<video src="${ev.multimediaUrl}" class="media-detalle-principal" controls></video>`;
         } else {
-            galeriaMediaHTML += `<img src="${ev.multimediaUrl}" class="media-detalle-item media-detalle-clickable" data-fullsrc="${ev.multimediaUrl}" alt="Media Principal">`;
+            mediaPrincipalHTML = `<img src="${ev.multimediaUrl}" class="media-detalle-principal media-detalle-clickable" data-fullsrc="${ev.multimediaUrl}" alt="Media Principal">`;
         }
     }
     if (ev.galeria && ev.galeria.length > 0) {
@@ -1037,8 +1038,9 @@ function abrirModalDetalle(idEvento) {
         <h2 style="color:white; margin-bottom:10px; font-size:1.6rem;">${ev.titulo}</h2>
         <span style="background:#4f46e5; font-size:0.75rem; padding:4px 10px; border-radius:8px; font-weight:bold; display:inline-block; margin-bottom:15px;">${ev.categoria}</span>
         <p style="color:var(--text-muted); font-size:0.95rem; line-height:1.5; margin-bottom:15px;">${urlify(ev.descripcion)}</p>
+        ${mediaPrincipalHTML ? `<div class="media-detalle-principal-wrap">${mediaPrincipalHTML}</div>` : ''}
         <h4 style="color:var(--premium-gold); margin-bottom:8px; font-size:0.9rem;">📸 Galería Multimedia y Videos:</h4>
-        <div class="grid-galeria-detalles">${galeriaMediaHTML}</div>
+        <div class="grid-galeria-detalles ${galeriaMediaHTML ? '' : 'grid-galeria-vacia'}">${galeriaMediaHTML || '<p style="color:var(--text-muted); font-size:0.85rem; margin:0;">No hay imágenes adicionales en la galería.</p>'}</div>
         <div style="background:#0f172a; padding:12px; border-radius:10px; font-size:0.85rem; margin-bottom:20px; border: 1px solid #334155;">
             <p style="margin-bottom:4px;">🏢 <b>Organizador:</b> ${ev.organizador}</p>
             <p style="margin-bottom:4px;">📍 <b>Dirección Completa:</b> ${ev.ubicacion?.direccion || 'No especificada'}</p>

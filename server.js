@@ -12,6 +12,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 const { v2: cloudinary } = require('cloudinary');
 
 const app = express();
@@ -332,7 +333,70 @@ function validarPaisCodigo(pais) {
     return PAISES_PERMITIDOS.has(String(pais || '').toUpperCase());
 }
 
-function normalizarDireccionSeleccionada(direccion, paisFallback = '') {
+function normalizarDireccionDesdeResultado(resultado, paisFallback = '') {
+    const latitud = Number(resultado?.latitud);
+    const longitud = Number(resultado?.longitud);
+    const displayName = limpiarTexto(resultado?.displayName || resultado?.display_name || '', 260);
+    const placeId = limpiarTexto(resultado?.placeId || resultado?.place_id || '', 64);
+    const countryCode = limpiarTexto(resultado?.countryCode || resultado?.country_code || paisFallback || '', 4).toUpperCase();
+    const countryName = limpiarTexto(resultado?.countryName || resultado?.country_name || '', 80);
+
+    if (!displayName || Number.isNaN(latitud) || Number.isNaN(longitud) || !validarPaisCodigo(countryCode)) {
+        return null;
+    }
+
+    return {
+        placeId: placeId || `manual-${countryCode || 'XX'}-${Buffer.from(displayName).toString('base64url').slice(0, 24)}`,
+        displayName,
+        latitud,
+        longitud,
+        countryCode,
+        countryName
+    };
+}
+
+async function geocodificarDireccionTexto(direccionTexto, paisFallback = '') {
+    const consulta = limpiarTexto(direccionTexto, 260);
+    if (!consulta) return null;
+
+    try {
+        const { data } = await axios.get('https://nominatim.openstreetmap.org/search', {
+            params: {
+                format: 'jsonv2',
+                addressdetails: 1,
+                limit: 5,
+                q: consulta
+            },
+            timeout: 7000,
+            headers: {
+                'User-Agent': 'Portal-Eventos/1.0 (+https://plandem.es)',
+                'Accept-Language': 'es-ES,es;q=0.9'
+            }
+        });
+
+        const resultados = Array.isArray(data) ? data : [];
+        if (resultados.length === 0) return null;
+
+        const paisDeseado = String(paisFallback || '').toUpperCase();
+        const candidato = resultados.find((item) => String(item?.address?.country_code || '').toUpperCase() === paisDeseado)
+            || resultados.find((item) => validarPaisCodigo(String(item?.address?.country_code || '').toUpperCase()))
+            || resultados[0];
+
+        return normalizarDireccionDesdeResultado({
+            placeId: candidato?.place_id,
+            displayName: candidato?.display_name,
+            latitud: candidato?.lat,
+            longitud: candidato?.lon,
+            countryCode: String(candidato?.address?.country_code || paisFallback || '').toUpperCase(),
+            countryName: candidato?.address?.country || ''
+        }, paisFallback);
+    } catch (error) {
+        console.warn('No se pudo geocodificar la dirección de perfil:', error.message);
+        return null;
+    }
+}
+
+async function normalizarDireccionSeleccionada(direccion, paisFallback = '') {
     if (!direccion) return null;
 
     let parsed = direccion;
@@ -340,29 +404,24 @@ function normalizarDireccionSeleccionada(direccion, paisFallback = '') {
         try {
             parsed = JSON.parse(direccion);
         } catch (error) {
-            return null;
+            return geocodificarDireccionTexto(direccion, paisFallback);
         }
     }
 
-    const latitud = Number(parsed?.latitud);
-    const longitud = Number(parsed?.longitud);
-    const displayName = limpiarTexto(parsed?.displayName || parsed?.display_name || '', 260);
-    const placeId = limpiarTexto(parsed?.placeId || parsed?.place_id || '', 64);
-    const countryCode = limpiarTexto(parsed?.countryCode || parsed?.country_code || paisFallback || '', 4).toUpperCase();
-    const countryName = limpiarTexto(parsed?.countryName || parsed?.country_name || '', 80);
-
-    if (!placeId || !displayName || Number.isNaN(latitud) || Number.isNaN(longitud) || !validarPaisCodigo(countryCode)) {
-        return null;
+    if (typeof parsed === 'string') {
+        return geocodificarDireccionTexto(parsed, paisFallback);
     }
 
-    return {
-        placeId,
-        displayName,
-        latitud,
-        longitud,
-        countryCode,
-        countryName
-    };
+    const normalizada = normalizarDireccionDesdeResultado(parsed, paisFallback);
+    if (normalizada) {
+        return normalizada;
+    }
+
+    if (parsed?.displayName || parsed?.display_name) {
+        return geocodificarDireccionTexto(parsed.displayName || parsed.display_name, paisFallback);
+    }
+
+    return null;
 }
 
 async function subirFotoPerfilRemota(rutaArchivo, usuarioId) {

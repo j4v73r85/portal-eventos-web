@@ -371,11 +371,13 @@ function actualizarDireccionSeleccionada(prefijo, sugerencia) {
 
 function obtenerDireccionSeleccionadaFormulario(prefijo) {
     const hidden = document.getElementById(`${prefijo}DireccionResidencia`);
+    const input = document.getElementById(`${prefijo}DireccionBusqueda`);
     if (!hidden || !hidden.value) return null;
     try {
         return JSON.parse(hidden.value);
     } catch (error) {
-        return null;
+        const texto = input?.value?.trim();
+        return texto || null;
     }
 }
 
@@ -2034,6 +2036,7 @@ async function handleFormEditarPerfil(e) {
     const tipoUsuario = document.getElementById('perfilTipoUsuario').value;
     const pais = document.getElementById('perfilPais').value;
     const direccionResidencia = obtenerDireccionSeleccionadaFormulario('perfil');
+    const direccionTextoResidencia = document.getElementById('perfilDireccionBusqueda')?.value.trim() || '';
     const preferenciasPlanes = obtenerPlanesSeleccionadosFormulario('perfil');
     const solicitudPromotor = document.getElementById('perfilSolicitudPromotor').value.trim();
     const verificacionPromotor = obtenerVerificacionPromotorDesdeFormulario('perfil');
@@ -2045,8 +2048,8 @@ async function handleFormEditarPerfil(e) {
         alert('Debes seleccionar tu país de residencia.');
         return;
     }
-    if (!esPrivilegiado && !direccionResidencia) {
-        alert('Debes seleccionar una dirección válida desde las sugerencias.');
+    if (!esPrivilegiado && !direccionResidencia && !direccionTextoResidencia) {
+        alert('Debes indicar una dirección válida. Puedes elegir una sugerencia o escribirla completa.');
         return;
     }
     if (!esPrivilegiado && preferenciasPlanes.length === 0) {
@@ -2064,7 +2067,11 @@ async function handleFormEditarPerfil(e) {
     formData.append('descripcionPersonal', descripcion);
     formData.append('tipoUsuario', tipoUsuario);
     if (pais) formData.append('pais', pais);
-    if (direccionResidencia) formData.append('direccionResidencia', JSON.stringify(direccionResidencia));
+    if (direccionResidencia) {
+        formData.append('direccionResidencia', typeof direccionResidencia === 'string' ? direccionResidencia : JSON.stringify(direccionResidencia));
+    } else if (direccionTextoResidencia) {
+        formData.append('direccionResidencia', direccionTextoResidencia);
+    }
     if (preferenciasPlanes.length > 0) formData.append('preferenciasPlanes', JSON.stringify(preferenciasPlanes));
     if (quiereSerPromotor) {
         formData.append('solicitudPromotor', solicitudPromotor);
@@ -2282,6 +2289,7 @@ async function handleFormRegistro(e) {
     const tipoUsuario = document.getElementById('regTipoUsuario').value;
     const pais = document.getElementById('regPais').value;
     const direccionResidencia = obtenerDireccionSeleccionadaFormulario('reg');
+    const direccionTextoResidencia = document.getElementById('regDireccionBusqueda')?.value.trim() || '';
     const preferenciasPlanes = obtenerPlanesSeleccionadosFormulario('reg');
     const solicitudPromotor = tipoUsuario === 'PROMOTOR' ? document.getElementById('regSolicitudPromotor').value.trim() : '';
     const verificacionPromotor = tipoUsuario === 'PROMOTOR' ? obtenerVerificacionPromotorDesdeFormulario('reg') : {};
@@ -2293,23 +2301,24 @@ async function handleFormRegistro(e) {
         alert('Debes seleccionar un país válido.');
         return;
     }
-    if (!direccionResidencia) {
-        alert('Debes seleccionar una dirección válida desde las sugerencias.');
+    if (!direccionResidencia && !direccionTextoResidencia) {
+        alert('Debes indicar una dirección válida. Puedes elegir una sugerencia o escribirla completa.');
         return;
     }
     if (preferenciasPlanes.length === 0) {
         alert('Selecciona al menos una preferencia de planes.');
         return;
     }
+    const direccionEnvio = direccionResidencia || direccionTextoResidencia;
     const bodyObj = {
         nombre: document.getElementById('regNombre').value,
         email: document.getElementById('regEmail').value,
         password: document.getElementById('regPassword').value,
         fechaNacimiento,
-        nacionalidad: direccionResidencia.countryName || pais,
-        localidad: direccionResidencia.displayName || '',
+        nacionalidad: typeof direccionEnvio === 'string' ? '' : (direccionEnvio.countryName || pais),
+        localidad: typeof direccionEnvio === 'string' ? direccionEnvio : (direccionEnvio.displayName || ''),
         pais,
-        direccionResidencia,
+        direccionResidencia: direccionEnvio,
         preferenciasPlanes,
         estadoCivil: document.getElementById('regEstadoCivil').value,
         tieneCoche: document.getElementById('regTieneCoche').value,
